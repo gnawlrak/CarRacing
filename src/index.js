@@ -190,7 +190,7 @@ function updatePhysics() {
     const speed = velocity.length();
 
     // 如果速度低于阈值,则停止车辆
-    const minSpeed = 0.05; // 最小速度阈值,单位是米/秒
+    const minSpeed = 0.1; // 最小速度阈值,单位是米/秒
     if (speed < minSpeed) {
         vehicle.applyEngineForce(0, 0);
         vehicle.applyEngineForce(0, 1);
