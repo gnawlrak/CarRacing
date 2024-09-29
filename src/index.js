@@ -139,7 +139,8 @@ function animate() {
 function updatePhysics() {
     const maxSteerVal = 0.6; // 最大转向角
     const maxForce = 1200; // 最大发动机力
-    const brakeForce = 10; // 刹车力
+    const brakeForce = 5; // 刹车力
+    const assistBrakeForce = 1; // 辅助刹车力，调小了这个值
 
     // 根据键盘输入应用发动机力
     if (keysPressed.ArrowUp) {
@@ -183,6 +184,23 @@ function updatePhysics() {
     
     // 更新物理世界
     world.step(1 / 60);
+
+    // 获取车辆速度
+    const velocity = vehicle.chassisBody.velocity;
+    const speed = velocity.length();
+
+    // 如果速度低于阈值,则停止车辆
+    const minSpeed = 0.05; // 最小速度阈值,单位是米/秒
+    if (speed < minSpeed) {
+        vehicle.applyEngineForce(0, 0);
+        vehicle.applyEngineForce(0, 1);
+        vehicle.applyEngineForce(0, 2);
+        vehicle.applyEngineForce(0, 3);
+        vehicle.setBrake(assistBrakeForce, 0);
+        vehicle.setBrake(assistBrakeForce, 1);
+        vehicle.setBrake(assistBrakeForce, 2);
+        vehicle.setBrake(assistBrakeForce, 3);
+    }
 
     // 更新车体和轮子的位置信息
     chassisMesh.position.copy(vehicle.chassisBody.position);
