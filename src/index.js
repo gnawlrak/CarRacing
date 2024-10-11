@@ -59,7 +59,7 @@ function init() {
 
     // 创建车体物理体
     const chassisShape = new CANNON.Box(new CANNON.Vec3(1, 0.5, 2));
-    const chassisBody = new CANNON.Body({ mass: 150 });
+    const chassisBody = new CANNON.Body({ mass: 1000 });
     chassisBody.addShape(chassisShape);
     chassisBody.position.set(0, 1, 0);
 
@@ -184,7 +184,7 @@ function animate() {
 
 function updatePhysics() {
     const maxSteerVal = 0.8; // 最大转向角
-    const maxForce = 1300; // 最大发动机力
+    const maxForce = 3300; // 最大发动机力
     const brakeForce = 10; // 刹车力
     const assistBrakeForce = 5; // 辅助刹车力，调小了这个值
 
