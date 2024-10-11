@@ -141,7 +141,41 @@ function init() {
     document.addEventListener('mousedown', onMouseDown);
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
+    // 创建城市地形
+    createCityTerrain();
 }
+
+
+// 创建城市地形的函数
+function createCityTerrain() {
+    const buildingMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff }); // 将建筑物颜色改为蓝色
+    const roadMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 }); // 将道路颜色改为灰色
+
+    // 初始化Cannon.js物理世界
+    const world = new CANNON.World();
+    world.gravity.set(0, -9.82, 0); // 设置重力
+
+    // 创建建筑物和道路
+    for (let i = -50; i < 50; i += 20) { // 增加间距
+        for (let j = -50; j < 50; j += 15) { // 增加间距
+            const height = Math.random() * 10 + 5; // 随机高度，增加最大高度
+            const buildingGeometry = new THREE.BoxGeometry(5, height, 5);
+            const buildingMesh = new THREE.Mesh(buildingGeometry, buildingMaterial);
+            buildingMesh.position.set(i, height / 2, j); // 设置建筑物位置
+            scene.add(buildingMesh);
+
+            // 在建筑物之间添加道路
+            if (i < 50 && j < 50) {
+                const roadGeometry = new THREE.PlaneGeometry(20, 20); // 道路宽度设置为20
+                const roadMesh = new THREE.Mesh(roadGeometry, roadMaterial);
+                roadMesh.rotation.x = -Math.PI / 2; // 旋转以平放
+                roadMesh.position.set(i, 0.01, j); // 设置道路位置
+                scene.add(roadMesh);
+            }
+        }
+    }
+}
+
 
 function onKeyDown(event) {
     // 按下键时设置对应键值为true
