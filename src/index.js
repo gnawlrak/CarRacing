@@ -79,7 +79,7 @@ function init() {
     const wheelOptions = {
         radius: 0.5,
         directionLocal: new CANNON.Vec3(0, -1, 0),
-        suspensionStiffness: 20, // 降低悬挂刚度
+        suspensionStiffness: 40, // 降低悬挂刚度
         suspensionRestLength: 0.4, // 增加悬挂休息长度
         frictionSlip: 2, // 降低摩擦滑动
         dampingRelaxation: 3, // 增加阻尼松弛
@@ -227,7 +227,7 @@ function animate() {
 function updatePhysics() {
     const maxSteerVal = 0.8; // 最大转向角
     const maxForce = 3300; // 最大发动机力
-    const brakeForce = 10; // 刹车力
+    const brakeForce = 10000000; // 刹车力
     const assistBrakeForce = 5; // 辅助刹车力，调小了这个值
 
     // 根据键盘输入应用发动机力
@@ -250,12 +250,13 @@ function updatePhysics() {
    
 
     // 应用手刹刹车力
+    console.log('Space pressed:', keysPressed.Space); // 在调用 setBrake 前输出 Space 键状态
     if (keysPressed.Space) {
-        vehicle.setBrake(brakeForce, 1);
-        vehicle.setBrake(brakeForce, 0);
+        vehicle.setBrake(brakeForce, 1); // 应用刹车力到后轮
+        vehicle.setBrake(brakeForce, 0); // 应用刹车力到前轮
     } else {
-        vehicle.setBrake(0, 1);
-        vehicle.setBrake(0, 0);
+        vehicle.setBrake(0, 1); // 释放后轮的刹车
+        vehicle.setBrake(0, 0); // 释放前轮的刹车
     }
 
     // 根据键盘输入应用转向角
