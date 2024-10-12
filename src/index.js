@@ -36,7 +36,7 @@ function init() {
     scene.add(light);
 
     // 创建并添加地面
-    const groundGeometry = new THREE.PlaneGeometry(100, 100);
+    const groundGeometry = new THREE.PlaneGeometry(1000, 1000);
     const groundMaterial = new THREE.MeshBasicMaterial({ color: 0x007700 });
     const groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
     groundMesh.rotation.x = -Math.PI / 2;
@@ -58,15 +58,15 @@ function init() {
     world.addBody(groundBody);
 
     // 创建车体物理体
-    const chassisShape = new CANNON.Box(new CANNON.Vec3(1, 0.5, 2));
+    const chassisShape = new CANNON.Box(new CANNON.Vec3(2, 0.5, 1));
     const chassisBody = new CANNON.Body({ mass: 1000 });
     chassisBody.addShape(chassisShape);
     chassisBody.position.set(0, 1, 0);
 
-    // 创建车体的Three.js网格，并添加到场景
+    // 正确的网格尺寸应该与物理体匹配
     chassisMesh = new THREE.Mesh(
-        new THREE.BoxGeometry(4, 1, 2),
-        new THREE.MeshBasicMaterial({ color: 0x00ff00 })
+    new THREE.BoxGeometry(2 * 2, 2 * 0.5, 2 * 1),  // 将半尺寸转为全尺寸
+    new THREE.MeshBasicMaterial({ color: 0x00ff00 })
     );
     scene.add(chassisMesh);
 
@@ -141,6 +141,7 @@ function init() {
     document.addEventListener('mousedown', onMouseDown);
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
+
     // 创建城市地形
     createCityTerrain();
 }
@@ -148,27 +149,34 @@ function init() {
 
 // 创建城市地形的函数
 function createCityTerrain() {
-    const buildingMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff }); // 将建筑物颜色改为蓝色
-    const roadMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 }); // 将道路颜色改为灰色
+    const buildingMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff }); // 蓝色建筑物
+    const roadMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 }); // 灰色道路
 
-    // 初始化Cannon.js物理世界
-    const world = new CANNON.World();
-    world.gravity.set(0, -9.82, 0); // 设置重力
-
+    
     // 创建建筑物和道路
-    for (let i = -50; i < 50; i += 20) { // 增加间距
-        for (let j = -50; j < 50; j += 15) { // 增加间距
-            const height = Math.random() * 10 + 5; // 随机高度，增加最大高度
+    for (let i = -50; i < 50; i += 20) { // 修改间距
+        for (let j = -50; j < 50; j += 15) {
+            const height = Math.random() * 20 + 10; // 随机高度
             const buildingGeometry = new THREE.BoxGeometry(5, height, 5);
             const buildingMesh = new THREE.Mesh(buildingGeometry, buildingMaterial);
-            buildingMesh.position.set(i, height / 2, j); // 设置建筑物位置
+            buildingMesh.position.set(i, height / 2, j); // 确保建筑物底部在地面上
             scene.add(buildingMesh);
+
+            // 为每个建筑物创建Cannon.js的物理体
+            const buildingShape = new CANNON.Box(new CANNON.Vec3(2.5, height / 2, 2.5)); // 碰撞箱
+            const buildingBody = new CANNON.Body({ mass: 0 }); // 静止物体，质量设为0
+            buildingBody.addShape(buildingShape);
+            buildingBody.position.set(i, height / 2, j); // 设置物理体位置
+            world.addBody(buildingBody); // 将物理体添加到物理世界
+            
+            // 物理体位置设置
+            buildingBody.position.set(i, height / 2, j); // 将物理体设置在建筑物的中心
 
             // 在建筑物之间添加道路
             if (i < 50 && j < 50) {
-                const roadGeometry = new THREE.PlaneGeometry(20, 20); // 道路宽度设置为20
+                const roadGeometry = new THREE.PlaneGeometry(20, 20); // 道路几何
                 const roadMesh = new THREE.Mesh(roadGeometry, roadMaterial);
-                roadMesh.rotation.x = -Math.PI / 2; // 旋转以平放
+                roadMesh.rotation.x = -Math.PI / 2; // 平放
                 roadMesh.position.set(i, 0.01, j); // 设置道路位置
                 scene.add(roadMesh);
             }
