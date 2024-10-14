@@ -24,6 +24,7 @@ function init() {
     // 初始化相机，设置视角和位置
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     camera.position.set(0, 5, 10);
+    
 
     // 初始化渲染器，并设置大小
     renderer = new THREE.WebGLRenderer();
@@ -36,7 +37,7 @@ function init() {
     scene.add(light);
 
     // 创建并添加地面
-    const groundGeometry = new THREE.PlaneGeometry(100, 100);
+    const groundGeometry = new THREE.PlaneGeometry(1000, 1000);
     const groundMaterial = new THREE.MeshBasicMaterial({ color: 0x007700 });
     const groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
     groundMesh.rotation.x = -Math.PI / 2;
@@ -58,15 +59,15 @@ function init() {
     world.addBody(groundBody);
 
     // 创建车体物理体
-    const chassisShape = new CANNON.Box(new CANNON.Vec3(1, 0.5, 2));
-    const chassisBody = new CANNON.Body({ mass: 150 });
+    const chassisShape = new CANNON.Box(new CANNON.Vec3(2, 0.5, 1));
+    const chassisBody = new CANNON.Body({ mass: 1000 });
     chassisBody.addShape(chassisShape);
     chassisBody.position.set(0, 1, 0);
 
-    // 创建车体的Three.js网格，并添加到场景
+    // 正确的网格尺寸应该与物理体匹配
     chassisMesh = new THREE.Mesh(
-        new THREE.BoxGeometry(4, 1, 2),
-        new THREE.MeshBasicMaterial({ color: 0x00ff00 })
+    new THREE.BoxGeometry(2 * 2, 2 * 0.5, 2 * 1),  // 将半尺寸转为全尺寸
+    new THREE.MeshBasicMaterial({ color: 0x00ff00 })
     );
     scene.add(chassisMesh);
 
@@ -79,7 +80,7 @@ function init() {
     const wheelOptions = {
         radius: 0.5,
         directionLocal: new CANNON.Vec3(0, -1, 0),
-        suspensionStiffness: 20, // 降低悬挂刚度
+        suspensionStiffness: 40, // 降低悬挂刚度
         suspensionRestLength: 0.4, // 增加悬挂休息长度
         frictionSlip: 2, // 降低摩擦滑动
         dampingRelaxation: 3, // 增加阻尼松弛
@@ -141,7 +142,49 @@ function init() {
     document.addEventListener('mousedown', onMouseDown);
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
+
+    // 创建城市地形
+    createCityTerrain();
 }
+
+
+// 创建城市地形的函数
+function createCityTerrain() {
+    const buildingMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff }); // 蓝色建筑物
+    const roadMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 }); // 灰色道路
+
+    
+    // 创建建筑物和道路
+    for (let i = -50; i < 50; i += 20) { // 修改间距
+        for (let j = -50; j < 50; j += 15) {
+            const height = Math.random() * 20 + 10; // 随机高度
+            const buildingGeometry = new THREE.BoxGeometry(5, height, 5);
+            const buildingMesh = new THREE.Mesh(buildingGeometry, buildingMaterial);
+            buildingMesh.position.set(i, height / 2, j); // 确保建筑物底部在地面上
+            scene.add(buildingMesh);
+
+            // 为每个建筑物创建Cannon.js的物理体
+            const buildingShape = new CANNON.Box(new CANNON.Vec3(2.5, height / 2, 2.5)); // 碰撞箱
+            const buildingBody = new CANNON.Body({ mass: 0 }); // 静止物体，质量设为0
+            buildingBody.addShape(buildingShape);
+            buildingBody.position.set(i, height / 2, j); // 设置物理体位置
+            world.addBody(buildingBody); // 将物理体添加到物理世界
+            
+            // 物理体位置设置
+            buildingBody.position.set(i, height / 2, j); // 将物理体设置在建筑物的中心
+
+            // 在建筑物之间添加道路
+            if (i < 50 && j < 50) {
+                const roadGeometry = new THREE.PlaneGeometry(20, 20); // 道路几何
+                const roadMesh = new THREE.Mesh(roadGeometry, roadMaterial);
+                roadMesh.rotation.x = -Math.PI / 2; // 平放
+                roadMesh.position.set(i, 0.01, j); // 设置道路位置
+                scene.add(roadMesh);
+            }
+        }
+    }
+}
+
 
 function onKeyDown(event) {
     // 按下键时设置对应键值为true
@@ -184,8 +227,8 @@ function animate() {
 
 function updatePhysics() {
     const maxSteerVal = 0.8; // 最大转向角
-    const maxForce = 1300; // 最大发动机力
-    const brakeForce = 10; // 刹车力
+    const maxForce = 3300; // 最大发动机力
+    const brakeForce = 10000000; // 刹车力
     const assistBrakeForce = 5; // 辅助刹车力，调小了这个值
 
     // 根据键盘输入应用发动机力
@@ -208,12 +251,13 @@ function updatePhysics() {
    
 
     // 应用手刹刹车力
+    console.log('Space pressed:', keysPressed.Space); // 在调用 setBrake 前输出 Space 键状态
     if (keysPressed.Space) {
-        vehicle.setBrake(brakeForce, 1);
-        vehicle.setBrake(brakeForce, 0);
+        vehicle.setBrake(brakeForce, 1); // 应用刹车力到后轮
+        vehicle.setBrake(brakeForce, 0); // 应用刹车力到前轮
     } else {
-        vehicle.setBrake(0, 1);
-        vehicle.setBrake(0, 0);
+        vehicle.setBrake(0, 1); // 释放后轮的刹车
+        vehicle.setBrake(0, 0); // 释放前轮的刹车
     }
 
     // 根据键盘输入应用转向角
