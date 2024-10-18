@@ -13,7 +13,6 @@ let isDragging = false;
 let lastMouseX = 0;
 let isFirstPersonView = false; // 新增变量以跟踪视角状态
 
-
 init();
 animate();
 
@@ -110,7 +109,7 @@ function init() {
     wheelOptions.chassisConnectionPointLocal.set(1.5, 0, -1);
     vehicle.addWheel(wheelOptions);
 
-    // ��车辆添加到物理世界
+    // 将车辆添加到物理世界
     vehicle.addToWorld(world);
 
     // 为每个轮子创建Three.js网格，并添加到场景
@@ -300,7 +299,7 @@ function updatePhysics() {
         vehicle.setBrake(assistBrakeForce, 3);
     }
 
-    // 更新车体和轮子的位置信息
+    // 更新车体和轮子的位置信息c
     chassisMesh.position.copy(vehicle.chassisBody.position);
     chassisMesh.quaternion.copy(vehicle.chassisBody.quaternion);
 
@@ -364,5 +363,3 @@ function updateCameraPosition() {
     camera.position.lerp(currentCameraPosition, 0.1);
     camera.lookAt(currentCameraLookAt);
 }
-
-
