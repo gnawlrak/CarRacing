@@ -13,6 +13,7 @@ let isDragging = false;
 let lastMouseX = 0;
 let isFirstPersonView = false; // 新增变量以跟踪视角状态
 
+
 init();
 animate();
 
