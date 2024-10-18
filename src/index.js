@@ -11,6 +11,7 @@ let originalCameraOffset = new THREE.Vector3(-5, 2, 0);
 let cameraAngle = 0;
 let isDragging = false;
 let lastMouseX = 0;
+let isFirstPersonView = false; // 新增变量以跟踪视角状态
 
 init();
 animate();
@@ -24,6 +25,7 @@ function init() {
     // 初始化相机，设置视角和位置
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     camera.position.set(0, 5, 10);
+    
 
     // 初始化渲染器，并设置大小
     renderer = new THREE.WebGLRenderer();
@@ -107,7 +109,7 @@ function init() {
     wheelOptions.chassisConnectionPointLocal.set(1.5, 0, -1);
     vehicle.addWheel(wheelOptions);
 
-    // 将车辆添加到物理世界
+    // ��车辆添加到物理世界
     vehicle.addToWorld(world);
 
     // 为每个轮子创建Three.js网格，并添加到场景
@@ -188,6 +190,11 @@ function createCityTerrain() {
 function onKeyDown(event) {
     // 按下键时设置对应键值为true
     keysPressed[event.key] = true;
+
+    if (event.key === 'c') { // 切换视角
+        isFirstPersonView = !isFirstPersonView; // 切换视角状态
+        updateCameraPosition(); // 更新相机位置
+    }
 }
 
 function onKeyUp(event) {
@@ -334,3 +341,27 @@ function render() {
 
 // 禁用右键菜单
 document.addEventListener('contextmenu', event => event.preventDefault());
+
+
+
+
+function updateCameraPosition() {
+    if (isFirstPersonView) {
+        // 第一人称视角
+        const firstPersonOffset = new THREE.Vector3(0, 1.5, 0); // 相机相对于车体的位置
+        currentCameraPosition.copy(chassisMesh.position).add(firstPersonOffset);
+        currentCameraLookAt.copy(chassisMesh.position).add(new THREE.Vector3(3, 0, 0)); // 永远朝向车的正右方
+    } else {
+        // 第三人称视角
+        const initialCameraOffset = new THREE.Vector3(-5, 2, 0);
+        currentCameraPosition.copy(chassisMesh.position).add(initialCameraOffset);
+        const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(chassisMesh.quaternion); // 车辆的前方方向
+        currentCameraLookAt.copy(chassisMesh.position).add(forward); // 更新相机朝向
+    }
+
+    // 确保相机位置和朝向的平滑过渡
+    camera.position.lerp(currentCameraPosition, 0.1);
+    camera.lookAt(currentCameraLookAt);
+}
+
+
