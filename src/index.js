@@ -226,6 +226,9 @@ function onMouseUp(event) {
 
 function animate() {
     // 动画循环
+    // if (isFirstPersonView) {
+    //     alert(isFirstPersonView);
+    // }
     requestAnimationFrame(animate);
     updatePhysics(); // 更新物理世界
     render(); // 渲染场景
@@ -311,27 +314,37 @@ function updatePhysics() {
         wheelMeshes[index].rotation.x = Math.PI / 2;
     });
 
-    // 更新相机位置
-    let cameraOffset = new THREE.Vector3().copy(originalCameraOffset);
-    if (isDragging || Math.abs(cameraAngle) > 0.001) {
-        cameraOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), cameraAngle);
-        if (!isDragging) {
-            // 慢慢回到原始位置
-            cameraAngle *= 0.95;
-            if (Math.abs(cameraAngle) < 0.001) cameraAngle = 0;
+    // 检查是否处于第一人称视角并更新相机
+    if (!isFirstPersonView) {
+        // 如果不是第一人称视角，继续按第三人称的方式更新相机
+        let cameraOffset = new THREE.Vector3().copy(originalCameraOffset);
+        if (isDragging || Math.abs(cameraAngle) > 0.001) {
+            cameraOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), cameraAngle);
+            if (!isDragging) {
+                // 慢慢回到原始位置
+                cameraAngle *= 0.95;
+                if (Math.abs(cameraAngle) < 0.001) cameraAngle = 0;
+            }
         }
-    }
 
-    const targetCameraPosition = new THREE.Vector3();
-    targetCameraPosition.copy(chassisMesh.position).add(cameraOffset.applyQuaternion(chassisMesh.quaternion));
+        const targetCameraPosition = new THREE.Vector3();
+        targetCameraPosition.copy(chassisMesh.position).add(cameraOffset.applyQuaternion(chassisMesh.quaternion));
     
-    // 平滑相机移动
-    currentCameraPosition.lerp(targetCameraPosition, 0.1);
-    camera.position.copy(currentCameraPosition);
+        // 平滑相机移动
+        currentCameraPosition.lerp(targetCameraPosition, 0.1);
+        camera.position.copy(currentCameraPosition);
 
-    // 平滑相机朝向
-    currentCameraLookAt.lerp(chassisMesh.position, 0.1);
-    camera.lookAt(currentCameraLookAt);
+        // 平滑相机朝向
+        currentCameraLookAt.lerp(chassisMesh.position, 0.1);
+        camera.lookAt(currentCameraLookAt);
+    } else {
+        // 如果是第一人称视角，则保持相机固定在车内
+        const firstPersonOffset = new THREE.Vector3(0, 1.5, 0); // 相机相对于车体的位置
+        currentCameraPosition.copy(chassisMesh.position).add(firstPersonOffset);
+        currentCameraLookAt.copy(chassisMesh.position).add(new THREE.Vector3(3, 0, 0)); // 永远朝向车的正前方
+        camera.position.copy(currentCameraPosition);
+        camera.lookAt(currentCameraLookAt);
+    }
 }
 
 function render() {
