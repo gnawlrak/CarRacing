@@ -12,6 +12,7 @@ let cameraAngle = 0;
 let isDragging = false;
 let lastMouseX = 0;
 let isFirstPersonView = false; // 新增变量以跟踪视角状态
+let cameraPitchAngle = 90; // 初始化相机俯仰角度
 
 init();
 animate();
@@ -38,7 +39,7 @@ function init() {
     scene.add(light);
 
     // 创建并添加地面
-    const groundGeometry = new THREE.PlaneGeometry(1000, 1000);
+    const groundGeometry = new THREE.PlaneGeometry(1000000, 1000000);
     const groundMaterial = new THREE.MeshBasicMaterial({ color: 0x007700 });
     const groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
     groundMesh.rotation.x = -Math.PI / 2;
@@ -179,7 +180,7 @@ function createCityTerrain() {
                 const roadGeometry = new THREE.PlaneGeometry(20, 20); // 道路几何
                 const roadMesh = new THREE.Mesh(roadGeometry, roadMaterial);
                 roadMesh.rotation.x = -Math.PI / 2; // 平放
-                roadMesh.position.set(i, 0.01, j); // 设置道路位置
+                roadMesh.position.set(i, 0.08, j); // 设置道路位置
                 scene.add(roadMesh);
             }
         }
@@ -213,9 +214,18 @@ function onMouseDown(event) {
 function onMouseMove(event) {
     if (isDragging) {
         const deltaX = event.clientX - lastMouseX;
-        cameraAngle -= deltaX * 0.01; // 注意这里的减号
+        cameraAngle -= deltaX * 0.01; // 水平旋转，左右移动控制水平旋转
         lastMouseX = event.clientX;
     }
+
+    // 垂直方向的移动，用来调整视角的高低
+    const deltaY = event.movementY || event.mozMovementY || event.webkitMovementY || 0;
+    cameraPitchAngle -= deltaY * 0.01; // 更新俯仰角度，高低调节
+
+    // 限制俯仰角度的范围，防止过度旋转
+    const maxPitch = Math.PI / 4;  // 最大俯仰角度，45度
+    const minPitch = Math.PI / 4; // 最小俯仰角度，-45度
+    cameraPitchAngle = Math.max(minPitch, Math.min(maxPitch, cameraPitchAngle));
 }
 
 function onMouseUp(event) {
@@ -226,6 +236,9 @@ function onMouseUp(event) {
 
 function animate() {
     // 动画循环
+    // if (isFirstPersonView) {
+    //     alert(isFirstPersonView);
+    // }
     requestAnimationFrame(animate);
     updatePhysics(); // 更新物理世界
     render(); // 渲染场景
@@ -233,7 +246,7 @@ function animate() {
 
 function updatePhysics() {
     const maxSteerVal = 0.8; // 最大转向角
-    const maxForce = 3300; // 最大发动机力
+    const maxForce = 4444; // 最大发动机力
     const brakeForce = 10000000; // 刹车力
     const assistBrakeForce = 5; // 辅助刹车力，调小了这个值
 
@@ -299,7 +312,7 @@ function updatePhysics() {
         vehicle.setBrake(assistBrakeForce, 3);
     }
 
-    // 更新车体和轮子的位置信息c
+    // 更新车体和轮子的位置信息
     chassisMesh.position.copy(vehicle.chassisBody.position);
     chassisMesh.quaternion.copy(vehicle.chassisBody.quaternion);
 
@@ -308,31 +321,85 @@ function updatePhysics() {
         const t = wheel.worldTransform;
         wheelMeshes[index].position.copy(t.position);
         wheelMeshes[index].quaternion.copy(t.quaternion);
-        wheelMeshes[index].rotation.x = Math.PI / 2;
     });
 
-    // 更新相机位置
-    let cameraOffset = new THREE.Vector3().copy(originalCameraOffset);
-    if (isDragging || Math.abs(cameraAngle) > 0.001) {
-        cameraOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), cameraAngle);
-        if (!isDragging) {
-            // 慢慢回到原始位置
-            cameraAngle *= 0.95;
-            if (Math.abs(cameraAngle) < 0.001) cameraAngle = 0;
-        }
-    }
 
+// 检查是否处于第一人称视角并更新相机
+if (!isFirstPersonView) {
+    // 如果是第三人称视角
+    let cameraOffset = new THREE.Vector3().copy(originalCameraOffset);
+
+    // 计算相机目标位置
     const targetCameraPosition = new THREE.Vector3();
     targetCameraPosition.copy(chassisMesh.position).add(cameraOffset.applyQuaternion(chassisMesh.quaternion));
-    
+
     // 平滑相机移动
     currentCameraPosition.lerp(targetCameraPosition, 0.1);
     camera.position.copy(currentCameraPosition);
 
-    // 平滑相机朝向
-    currentCameraLookAt.lerp(chassisMesh.position, 0.1);
+    // **更新相机朝向车辆右方**
+    const rightOffset = new THREE.Vector3(1, 0, 0); // 车辆的右侧方向
+    rightOffset.applyQuaternion(chassisMesh.quaternion); // 将右侧方向转化为车辆当前朝向的局部坐标系
+    const targetLookAt = new THREE.Vector3().copy(chassisMesh.position).add(rightOffset);
+    
+    currentCameraLookAt.lerp(targetLookAt, 0.1);
+    camera.lookAt(currentCameraLookAt);
+} else {
+    // 如果是第一人称视角
+    const firstPersonOffset = new THREE.Vector3(0, 0.8, 0); // 相机相对于车体的位置
+    currentCameraPosition.copy(chassisMesh.position).add(firstPersonOffset);
+    
+    // **更新相机朝向车辆右方**
+    const rightOffset = new THREE.Vector3(1, 0, 0); // 车辆的右侧方向
+    rightOffset.applyQuaternion(chassisMesh.quaternion); // 将右侧方向转化为车辆当前朝向的局部坐标系
+    currentCameraLookAt.copy(chassisMesh.position).add(rightOffset); // 相机朝向右侧
+    
+    camera.position.copy(currentCameraPosition);
     camera.lookAt(currentCameraLookAt);
 }
+    // 检查视角并更新相机位置和朝向
+    if (!isFirstPersonView) {
+        let cameraOffset = new THREE.Vector3().copy(originalCameraOffset);
+
+        // 计算相机目标位置
+        const targetCameraPosition = new THREE.Vector3();
+        targetCameraPosition.copy(chassisMesh.position).add(cameraOffset.applyQuaternion(chassisMesh.quaternion));
+
+        // 平滑相机移动
+        currentCameraPosition.lerp(targetCameraPosition, 0.1);
+        camera.position.copy(currentCameraPosition);
+
+        // **计算车辆右方方向**
+        const rightOffset = new THREE.Vector3(1, 0, 0).applyQuaternion(chassisMesh.quaternion);
+
+        // **计算俯仰角的影响**
+        const lookAtOffset = new THREE.Vector3().copy(rightOffset);
+        lookAtOffset.y = Math.sin(cameraPitchAngle); // 根据俯仰角度调整相机的上下朝向
+        lookAtOffset.normalize(); // 确保向量长度为1
+
+        const targetLookAt = new THREE.Vector3().copy(chassisMesh.position).add(lookAtOffset);
+
+        // 平滑相机朝向
+        currentCameraLookAt.lerp(targetLookAt, 0.1);
+        camera.lookAt(currentCameraLookAt);
+    } else {
+        const firstPersonOffset = new THREE.Vector3(0, 0.8, 0);
+        currentCameraPosition.copy(chassisMesh.position).add(firstPersonOffset);
+
+        const rightOffset = new THREE.Vector3(1, 0, 0).applyQuaternion(chassisMesh.quaternion);
+
+        // **计算俯仰角的影响**
+        const lookAtOffset = new THREE.Vector3().copy(rightOffset);
+        lookAtOffset.y = Math.sin(cameraPitchAngle); // 根据俯仰角度调整相机的上下朝向
+        lookAtOffset.normalize(); // 确保向量长度为1
+
+        currentCameraLookAt.copy(chassisMesh.position).add(lookAtOffset);
+
+        camera.position.copy(currentCameraPosition);
+        camera.lookAt(currentCameraLookAt);
+    }
+}
+
 
 function render() {
     // 渲染Three.js场景
@@ -348,7 +415,7 @@ document.addEventListener('contextmenu', event => event.preventDefault());
 function updateCameraPosition() {
     if (isFirstPersonView) {
         // 第一人称视角
-        const firstPersonOffset = new THREE.Vector3(0, 1.5, 0); // 相机相对于车体的位置
+        const firstPersonOffset = new THREE.Vector3(0, 0.8, 0); // 相机相对于车体的位置
         currentCameraPosition.copy(chassisMesh.position).add(firstPersonOffset);
         currentCameraLookAt.copy(chassisMesh.position).add(new THREE.Vector3(3, 0, 0)); // 永远朝向车的正右方
     } else {
