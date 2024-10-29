@@ -13,6 +13,8 @@ let isDragging = false;
 let lastMouseX = 0;
 let isFirstPersonView = false; // 新增变量以跟踪视角状态
 let cameraPitchAngle = 90; // 初始化相机俯仰角度
+let loadedChunks = []; // 存储已加载的地形块
+const chunkSize = 1000; // 每个地形块的大小
 
 init();
 animate();
@@ -39,7 +41,7 @@ function init() {
     scene.add(light);
 
     // 创建并添加地面
-    const groundGeometry = new THREE.PlaneGeometry(1000000, 1000000);
+    const groundGeometry = new THREE.PlaneGeometry(1000, 1000);
     const groundMaterial = new THREE.MeshBasicMaterial({ color: 0x007700 });
     const groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
     groundMesh.rotation.x = -Math.PI / 2;
@@ -187,6 +189,17 @@ function createCityTerrain() {
     }
 }
 
+function createTerrainChunk(x, z) {
+    const groundGeometry = new THREE.PlaneGeometry(chunkSize, chunkSize);
+    const groundMaterial = new THREE.MeshBasicMaterial({ color: 0x007700, side: THREE.DoubleSide });
+    const groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
+    groundMesh.rotation.x = -Math.PI / 2;
+    groundMesh.position.set(x, 0, z);
+    scene.add(groundMesh);
+
+    // 保存地形块信息
+    loadedChunks.push({ x, z, mesh: groundMesh });
+}
 
 function onKeyDown(event) {
     // 按下键时设置对应键值为true
@@ -241,6 +254,7 @@ function animate() {
     // }
     requestAnimationFrame(animate);
     updatePhysics(); // 更新物理世界
+    updateTerrain(); // 更新地形
     render(); // 渲染场景
 }
 
@@ -398,6 +412,43 @@ if (!isFirstPersonView) {
         camera.position.copy(currentCameraPosition);
         camera.lookAt(currentCameraLookAt);
     }
+}
+
+function updateTerrain() {
+    const vehiclePosition = vehicle.chassisBody.position;
+    const currentChunkX = Math.floor(vehiclePosition.x / chunkSize) * chunkSize;
+    const currentChunkZ = Math.floor(vehiclePosition.z / chunkSize) * chunkSize;
+
+    // 定义一个二维区域来检测需要加载的新地形块
+    const adjacentChunks = [
+        [0, 0], [chunkSize, 0], [-chunkSize, 0],
+        [0, chunkSize], [0, -chunkSize],
+        [chunkSize, chunkSize], [chunkSize, -chunkSize],
+        [-chunkSize, chunkSize], [-chunkSize, -chunkSize]
+    ];
+
+    adjacentChunks.forEach(offset => {
+        const [offsetX, offsetZ] = offset;
+        const chunkX = currentChunkX + offsetX;
+        const chunkZ = currentChunkZ + offsetZ;
+
+        // 检查地形块是否已经加载
+        if (!loadedChunks.some(chunk => chunk.x === chunkX && chunk.z === chunkZ)) {
+            createTerrainChunk(chunkX, chunkZ);
+        }
+    });
+
+    // 移除超出视距的地形块
+    loadedChunks = loadedChunks.filter(chunk => {
+        const distance = Math.sqrt(
+            Math.pow(chunk.x - vehiclePosition.x, 2) + Math.pow(chunk.z - vehiclePosition.z, 2)
+        );
+        if (distance > chunkSize * 2) {
+            scene.remove(chunk.mesh);
+            return false;
+        }
+        return true;
+    });
 }
 
 
