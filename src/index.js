@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
+import { Noise } from 'noisejs';
 
 let scene, camera, renderer;
 let world, vehicle;
@@ -15,6 +16,10 @@ let isFirstPersonView = false; // 新增变量以跟踪视角状态
 let cameraPitchAngle = 90; // 初始化相机俯仰角度
 let loadedChunks = []; // 存储已加载的地形块
 const chunkSize = 1000; // 每个地形块的大小
+const resolution = 64; // 地形细分分辨率
+const noiseScale = 0.01; // 控制噪声密度，使地形起伏平滑
+const noise = new Noise(Math.random()); // 使用随机种子
+
 
 init();
 animate();
@@ -190,15 +195,54 @@ function createCityTerrain() {
 }
 
 function createTerrainChunk(x, z) {
-    const groundGeometry = new THREE.PlaneGeometry(chunkSize, chunkSize);
+    const groundGeometry = new THREE.PlaneGeometry(chunkSize, chunkSize, resolution, resolution);
     const groundMaterial = new THREE.MeshBasicMaterial({ color: 0x007700, side: THREE.DoubleSide });
+    
+    // 准备高度数据数组
+    const heights = Array(resolution + 1).fill(null).map(() => Array(resolution + 1).fill(0));
+    const positions = groundGeometry.attributes.position;
+
+    for (let i = 0; i < positions.count; i++) {
+        const ix = i % (resolution + 1);
+        const iz = Math.floor(i / (resolution + 1));
+        const worldX = x + positions.getX(i);
+        const worldZ = z + positions.getY(i);
+
+        const height = generateHeight(worldX, worldZ);
+        positions.setZ(i, height);
+        heights[ix][iz] = height;
+    }
+
+    positions.needsUpdate = true;
+    groundGeometry.computeVertexNormals();
+
+    // Three.js 地形网格
     const groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
     groundMesh.rotation.x = -Math.PI / 2;
     groundMesh.position.set(x, 0, z);
     scene.add(groundMesh);
 
+    // Cannon.js 高度场
+    const heightfieldShape = new CANNON.Heightfield(heights, {
+        elementSize: chunkSize / resolution
+    });
+    const heightfieldBody = new CANNON.Body({ mass: 0 });
+    heightfieldBody.addShape(heightfieldShape);
+    heightfieldBody.position.set(x, 0, z);
+    heightfieldBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+
+    world.addBody(heightfieldBody);
+
     // 保存地形块信息
-    loadedChunks.push({ x, z, mesh: groundMesh });
+    loadedChunks.push({ x, z, mesh: groundMesh, body: heightfieldBody });
+}
+
+
+
+// 使用Perlin噪声生成高度
+function generateHeight(x, z) {
+    const height = noise.perlin2(x * noiseScale, z * noiseScale);
+    return height * 50;
 }
 
 function onKeyDown(event) {
@@ -419,7 +463,6 @@ function updateTerrain() {
     const currentChunkX = Math.floor(vehiclePosition.x / chunkSize) * chunkSize;
     const currentChunkZ = Math.floor(vehiclePosition.z / chunkSize) * chunkSize;
 
-    // 定义一个二维区域来检测需要加载的新地形块
     const adjacentChunks = [
         [0, 0], [chunkSize, 0], [-chunkSize, 0],
         [0, chunkSize], [0, -chunkSize],
@@ -432,19 +475,19 @@ function updateTerrain() {
         const chunkX = currentChunkX + offsetX;
         const chunkZ = currentChunkZ + offsetZ;
 
-        // 检查地形块是否已经加载
         if (!loadedChunks.some(chunk => chunk.x === chunkX && chunk.z === chunkZ)) {
             createTerrainChunk(chunkX, chunkZ);
         }
     });
 
-    // 移除超出视距的地形块
+    // 清除不在视野范围内的地形块
     loadedChunks = loadedChunks.filter(chunk => {
         const distance = Math.sqrt(
             Math.pow(chunk.x - vehiclePosition.x, 2) + Math.pow(chunk.z - vehiclePosition.z, 2)
         );
         if (distance > chunkSize * 2) {
             scene.remove(chunk.mesh);
+            world.removeBody(chunk.body);
             return false;
         }
         return true;
