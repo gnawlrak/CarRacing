@@ -13,8 +13,14 @@ let isDragging = false;
 let lastMouseX = 0;
 let isFirstPersonView = false; // 新增变量以跟踪视角状态
 let cameraPitchAngle = 90; // 初始化相机俯仰角度
-let loadedChunks = []; // 存储已加载的地形块
-const chunkSize = 1000; // 每个地形块的大小
+let loadedChunks = []; // 存储格式: { x, z, mesh: groundMesh, buildings: [] }
+const chunkSize = 50; // 每个地形块的大小
+
+// 添加边界常量
+const WORLD_BOUNDS = {
+    min: -500,  // -1000/2
+    max: 500    // 1000/2
+};
 
 init();
 animate();
@@ -41,8 +47,8 @@ function init() {
     scene.add(light);
 
     // 创建并添加地面
-    const groundGeometry = new THREE.PlaneGeometry(1000, 1000);
-    const groundMaterial = new THREE.MeshBasicMaterial({ color: 0x007700 });
+    const groundGeometry = new THREE.PlaneGeometry(20, 20);
+    const groundMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 });
     const groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
     groundMesh.rotation.x = -Math.PI / 2;
     scene.add(groundMesh);
@@ -148,57 +154,151 @@ function init() {
     document.addEventListener('mouseup', onMouseUp);
 
     // 创建城市地形
-    createCityTerrain();
+
+
 }
 
 
-// 创建城市地形的函数
-function createCityTerrain() {
-    const buildingMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff }); // 蓝色建筑物
-    const roadMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 }); // 灰色道路
-
+function createTerrainChunk(x, z) {
+    // 创建地面
+    const groundGeometry = new THREE.PlaneGeometry(chunkSize, chunkSize);
+    const isOutsideCity = (x < WORLD_BOUNDS.min || x > WORLD_BOUNDS.max || 
+                          z < WORLD_BOUNDS.min || z > WORLD_BOUNDS.max);
     
-    // 创建建筑物和道路
-    for (let i = -50; i < 50; i += 20) { // 修改间距
-        for (let j = -50; j < 50; j += 15) {
-            const height = Math.random() * 20 + 10; // 随机高度
-            const buildingGeometry = new THREE.BoxGeometry(5, height, 5);
-            const buildingMesh = new THREE.Mesh(buildingGeometry, buildingMaterial);
-            buildingMesh.position.set(i, height / 2, j); // 确保建筑物底部在地面上
-            scene.add(buildingMesh);
-
-            // 为每个建筑物创建Cannon.js的物理体
-            const buildingShape = new CANNON.Box(new CANNON.Vec3(2.5, height / 2, 2.5)); // 碰撞箱
-            const buildingBody = new CANNON.Body({ mass: 0 }); // 静止物体，质量设为0
-            buildingBody.addShape(buildingShape);
-            buildingBody.position.set(i, height / 2, j); // 设置物理体位置
-            world.addBody(buildingBody); // 将物理体添加到物理世界
-            
-            // 物理体位置设置
-            buildingBody.position.set(i, height / 2, j); // 将物理体设置在建筑物的中心
-
-            // 在建筑物之间添加道路
-            if (i < 50 && j < 50) {
-                const roadGeometry = new THREE.PlaneGeometry(20, 20); // 道路几何
-                const roadMesh = new THREE.Mesh(roadGeometry, roadMaterial);
-                roadMesh.rotation.x = -Math.PI / 2; // 平放
-                roadMesh.position.set(i, 0.08, j); // 设置道路位置
-                scene.add(roadMesh);
+    // 根据是否在城市边界内选择不同的地面材质和生成逻辑
+    if (isOutsideCity) {
+        // 城市外的自然地形
+        const groundMaterial = new THREE.MeshBasicMaterial({ color: 0x007700, side: THREE.DoubleSide });
+        const groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
+        groundMesh.rotation.x = -Math.PI / 2;
+        groundMesh.position.set(x, 0, z);
+        
+        // 添加随机地形起伏
+        const vertices = groundMesh.geometry.attributes.position.array;
+        for (let i = 0; i < vertices.length; i += 3) {
+            if (i % 3 === 1) { // 只修改y坐标
+                vertices[i] = Math.random() * 2; // 随机高度
             }
         }
+        groundMesh.geometry.attributes.position.needsUpdate = true;
+        scene.add(groundMesh);
+
+        // 添加自然元素（树木、岩石等）
+        const naturalElements = [];
+        for (let i = x - chunkSize/2; i < x + chunkSize/2; i += 10) {
+            for (let j = z - chunkSize/2; j < z + chunkSize/2; j += 10) {
+                if (Math.random() < 0.3) { // 30%的概率生成自然元素
+                    const elementType = Math.random() < 0.5 ? 'tree' : 'rock';
+                    const element = createNaturalElement(elementType, i, j);
+                    if (element.mesh) {
+                        naturalElements.push(element);
+                    }
+                }
+            }
+        }
+
+        // 保存自然地形区块
+        loadedChunks.push({ 
+            x, 
+            z, 
+            mesh: groundMesh, 
+            buildings: naturalElements 
+        });
+
+    } else {
+        // 城市内的地形（保持原有的城市生成逻辑）
+        const groundMaterial = new THREE.MeshBasicMaterial({ color: 0x333333, side: THREE.DoubleSide });
+        const groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
+        groundMesh.rotation.x = -Math.PI / 2;
+        groundMesh.position.set(x, 0, z);
+        scene.add(groundMesh);
+
+        // 在区块内创建建筑物
+        const buildings = [];
+        const buildingMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff });
+
+        // 在区块范围内创建建筑物
+        for (let i = x - chunkSize/2; i < x + chunkSize/2; i += 20) {
+            for (let j = z - chunkSize/2; j < z + chunkSize/2; j += 15) {
+                const height = Math.random() * 20 + 10;
+                
+                // 创建建筑物网格
+                const buildingGeometry = new THREE.BoxGeometry(5, height, 5);
+                const buildingMesh = new THREE.Mesh(buildingGeometry, buildingMaterial);
+                buildingMesh.position.set(i, height/2, j);
+                scene.add(buildingMesh);
+
+                // 创建建筑物物理体
+                const buildingShape = new CANNON.Box(new CANNON.Vec3(2.5, height/2, 2.5));
+                const buildingBody = new CANNON.Body({ mass: 0 });
+                buildingBody.addShape(buildingShape);
+                buildingBody.position.set(i, height/2, j);
+                world.addBody(buildingBody);
+
+                buildings.push({ 
+                    mesh: buildingMesh, 
+                    body: buildingBody 
+                });
+            }
+        }
+
+        // 保存城市区块
+        loadedChunks.push({ 
+            x, 
+            z, 
+            mesh: groundMesh, 
+            buildings: buildings 
+        });
     }
 }
 
-function createTerrainChunk(x, z) {
-    const groundGeometry = new THREE.PlaneGeometry(chunkSize, chunkSize);
-    const groundMaterial = new THREE.MeshBasicMaterial({ color: 0x007700, side: THREE.DoubleSide });
-    const groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
-    groundMesh.rotation.x = -Math.PI / 2;
-    groundMesh.position.set(x, 0, z);
-    scene.add(groundMesh);
-
-    // 保存地形块信息
-    loadedChunks.push({ x, z, mesh: groundMesh });
+// 添加创建自然元素的辅助函数
+function createNaturalElement(type, x, z) {
+    let mesh, body;
+    
+    if (type === 'tree') {
+        // 创建树干
+        const trunkGeometry = new THREE.CylinderGeometry(0.3, 0.5, 2, 8);
+        const trunkMaterial = new THREE.MeshBasicMaterial({ color: 0x4b3621 });
+        const trunkMesh = new THREE.Mesh(trunkGeometry, trunkMaterial);
+        
+        // 创建树冠
+        const leavesGeometry = new THREE.ConeGeometry(2, 4, 8);
+        const leavesMaterial = new THREE.MeshBasicMaterial({ color: 0x228B22 });
+        const leavesMesh = new THREE.Mesh(leavesGeometry, leavesMaterial);
+        leavesMesh.position.y = 3;
+        
+        // 组合树干和树冠
+        mesh = new THREE.Group();
+        mesh.add(trunkMesh);
+        mesh.add(leavesMesh);
+        mesh.position.set(x, 1, z);
+        scene.add(mesh);
+        
+        // 创建简单的物理碰撞体
+        const treeShape = new CANNON.Cylinder(0.5, 0.5, 2, 8);
+        body = new CANNON.Body({ mass: 0 });
+        body.addShape(treeShape);
+        body.position.set(x, 1, z);
+        world.addBody(body);
+        
+    } else if (type === 'rock') {
+        // 创建岩石
+        const rockGeometry = new THREE.DodecahedronGeometry(Math.random() * 1 + 0.5);
+        const rockMaterial = new THREE.MeshBasicMaterial({ color: 0x808080 });
+        mesh = new THREE.Mesh(rockGeometry, rockMaterial);
+        mesh.position.set(x, 0.5, z);
+        scene.add(mesh);
+        
+        // 创建岩石的物理碰撞体
+        const rockShape = new CANNON.Sphere(0.75);
+        body = new CANNON.Body({ mass: 0 });
+        body.addShape(rockShape);
+        body.position.set(x, 0.5, z);
+        world.addBody(body);
+    }
+    
+    return { mesh, body };
 }
 
 function onKeyDown(event) {
@@ -351,7 +451,7 @@ if (!isFirstPersonView) {
     currentCameraPosition.lerp(targetCameraPosition, 0.1);
     camera.position.copy(currentCameraPosition);
 
-    // **更新相机朝向车辆右方**
+    // **新相机朝向车辆右方**
     const rightOffset = new THREE.Vector3(1, 0, 0); // 车辆的右侧方向
     rightOffset.applyQuaternion(chassisMesh.quaternion); // 将右侧方向转化为车辆当前朝向的局部坐标系
     const targetLookAt = new THREE.Vector3().copy(chassisMesh.position).add(rightOffset);
@@ -416,6 +516,13 @@ if (!isFirstPersonView) {
 
 function updateTerrain() {
     const vehiclePosition = vehicle.chassisBody.position;
+
+    // 删除以下边界限制代码
+    // if (vehiclePosition.x < WORLD_BOUNDS.min) vehiclePosition.x = WORLD_BOUNDS.min;
+    // if (vehiclePosition.x > WORLD_BOUNDS.max) vehiclePosition.x = WORLD_BOUNDS.max;
+    // if (vehiclePosition.z < WORLD_BOUNDS.min) vehiclePosition.z = WORLD_BOUNDS.min;
+    // if (vehiclePosition.z > WORLD_BOUNDS.max) vehiclePosition.z = WORLD_BOUNDS.max;
+
     const currentChunkX = Math.floor(vehiclePosition.x / chunkSize) * chunkSize;
     const currentChunkZ = Math.floor(vehiclePosition.z / chunkSize) * chunkSize;
 
@@ -438,13 +545,30 @@ function updateTerrain() {
         }
     });
 
-    // 移除超出视距的地形块
+    // 修改移除超出视距的地形块的逻辑
     loadedChunks = loadedChunks.filter(chunk => {
         const distance = Math.sqrt(
-            Math.pow(chunk.x - vehiclePosition.x, 2) + Math.pow(chunk.z - vehiclePosition.z, 2)
+            Math.pow(chunk.x - vehiclePosition.x, 2) + 
+            Math.pow(chunk.z - vehiclePosition.z, 2)
         );
         if (distance > chunkSize * 2) {
+            // 移除地面
             scene.remove(chunk.mesh);
+            
+            // 移除所有建筑物和自然元素
+            chunk.buildings.forEach(building => {
+                if (building.mesh instanceof THREE.Group) {
+                    // 如果是组合体（比如树），移除所有子元素
+                    building.mesh.children.forEach(child => {
+                        scene.remove(child);
+                    });
+                }
+                scene.remove(building.mesh);
+                if (building.body) {
+                    world.removeBody(building.body);
+                }
+            });
+            
             return false;
         }
         return true;
@@ -481,3 +605,4 @@ function updateCameraPosition() {
     camera.position.lerp(currentCameraPosition, 0.1);
     camera.lookAt(currentCameraLookAt);
 }
+
