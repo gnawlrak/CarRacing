@@ -22,11 +22,24 @@ const WORLD_BOUNDS = {
     max: 500    // 1000/2
 };
 
+// 在文件开头添加出生点常量
+const SPAWN_POSITION = { x: 0, y: 1, z: 0 }; // y=1 确保车辆在地面上方
+
 init();
 animate();
 
 function init() {
-    keysPressed = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false, Space: false };
+    keysPressed = { 
+        ArrowUp: false, 
+        ArrowDown: false, 
+        ArrowLeft: false, 
+        ArrowRight: false, 
+        Space: false,
+        r: false,
+        R: false,
+        t: false,
+        T: false
+    };
 
     // 初始化Three.js场景
     scene = new THREE.Scene();
@@ -36,7 +49,7 @@ function init() {
     camera.position.set(0, 5, 10);
     
 
-    // 初始化渲染器，并设置大小
+    // 初始化渲染器，设置大小
     renderer = new THREE.WebGLRenderer();
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
@@ -302,12 +315,22 @@ function createNaturalElement(type, x, z) {
 }
 
 function onKeyDown(event) {
-    // 按下键时设置对应键值为true
+    // 保持现有的按键处理
     keysPressed[event.key] = true;
 
-    if (event.key === 'c') { // 切换视角
-        isFirstPersonView = !isFirstPersonView; // 切换视角状态
-        updateCameraPosition(); // 更新相机位置
+    if (event.key === 'c') {
+        isFirstPersonView = !isFirstPersonView;
+        updateCameraPosition();
+    }
+
+    // 添加R键重生功能
+    if (event.key === 'r' || event.key === 'R') {
+        resetVehicle();
+    }
+
+    // 添加T键转正功能
+    if (event.key === 't' || event.key === 'T') {
+        straightenVehicle();
     }
 }
 
@@ -498,6 +521,8 @@ if (!isFirstPersonView) {
         camera.lookAt(currentCameraLookAt);
     } else {
         const firstPersonOffset = new THREE.Vector3(0, 0.8, 0);
+        // 将firstPersonOffset根据车辆的旋转进行变换
+        firstPersonOffset.applyQuaternion(chassisMesh.quaternion);
         currentCameraPosition.copy(chassisMesh.position).add(firstPersonOffset);
 
         const rightOffset = new THREE.Vector3(1, 0, 0).applyQuaternion(chassisMesh.quaternion);
@@ -509,7 +534,10 @@ if (!isFirstPersonView) {
 
         currentCameraLookAt.copy(chassisMesh.position).add(lookAtOffset);
 
+        // 应用车辆的旋转到相机
         camera.position.copy(currentCameraPosition);
+        camera.quaternion.copy(chassisMesh.quaternion);
+        camera.rotateY(Math.PI / 2); // 让相机朝向右侧
         camera.lookAt(currentCameraLookAt);
     }
 }
@@ -604,5 +632,68 @@ function updateCameraPosition() {
     // 确保相机位置和朝向的平滑过渡
     camera.position.lerp(currentCameraPosition, 0.1);
     camera.lookAt(currentCameraLookAt);
+}
+
+// 添加重生函数
+function resetVehicle() {
+    // 重置位置
+    vehicle.chassisBody.position.set(SPAWN_POSITION.x, SPAWN_POSITION.y, SPAWN_POSITION.z);
+    
+    // 重置速度
+    vehicle.chassisBody.velocity.setZero();
+    vehicle.chassisBody.angularVelocity.setZero();
+    
+    // 重置方向（使用四元数设置为默认朝向）
+    vehicle.chassisBody.quaternion.set(0, 0, 0, 1);
+    
+    // 重置所有车轮
+    for (let i = 0; i < vehicle.wheelInfos.length; i++) {
+        vehicle.wheelInfos[i].suspensionLength = 0;
+        vehicle.wheelInfos[i].suspensionForce = 0;
+        vehicle.wheelInfos[i].suspensionRelativeVelocity = 0;
+        vehicle.wheelInfos[i].deltaRotation = 0;
+    }
+    
+    // 更新车辆的物理状态
+    vehicle.chassisBody.wakeUp();
+}
+
+// 添加转正函数
+function straightenVehicle() {
+    // 获取当前位置
+    const currentPosition = vehicle.chassisBody.position.clone();
+    
+    // 保持当前y轴旋转（朝向），但重置其他轴的旋转
+    const currentRotation = new CANNON.Quaternion();
+    vehicle.chassisBody.quaternion.copy(currentRotation);
+    
+    // 获取当前y轴旋转角度
+    const euler = new CANNON.Vec3();
+    vehicle.chassisBody.quaternion.toEuler(euler);
+    
+    // 创建新的四元数，只保留y轴旋转
+    const newQuaternion = new CANNON.Quaternion();
+    newQuaternion.setFromEuler(0, euler.y, 0);
+    
+    // 应用新的旋转
+    vehicle.chassisBody.quaternion.copy(newQuaternion);
+    
+    // 稍微抬升车辆以防止卡在地面
+    vehicle.chassisBody.position.y = Math.max(currentPosition.y, SPAWN_POSITION.y);
+    
+    // 重置速度
+    vehicle.chassisBody.velocity.setZero();
+    vehicle.chassisBody.angularVelocity.setZero();
+    
+    // 重置车轮状态
+    for (let i = 0; i < vehicle.wheelInfos.length; i++) {
+        vehicle.wheelInfos[i].suspensionLength = 0;
+        vehicle.wheelInfos[i].suspensionForce = 0;
+        vehicle.wheelInfos[i].suspensionRelativeVelocity = 0;
+        vehicle.wheelInfos[i].deltaRotation = 0;
+    }
+    
+    // 唤醒物理体
+    vehicle.chassisBody.wakeUp();
 }
 
