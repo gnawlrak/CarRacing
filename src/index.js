@@ -722,6 +722,7 @@ function straightenVehicle() {
     vehicle.chassisBody.wakeUp();
 }
 
+// 修改车辆更新函数
 function updateVehicle() {
     const velocity = vehicle.chassisBody.velocity;
     const speed = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
