@@ -25,6 +25,20 @@ const WORLD_BOUNDS = {
 // 在文件开头添加出生点常量
 const SPAWN_POSITION = { x: 0, y: 1, z: 0 }; // y=1 确保车辆在地面上方
 
+// 添加漂移相关状态
+let isDrifting = false;
+let driftFactor = 50;
+const MAX_DRIFT_FACTOR = 50; // 最大漂移系数
+const DRIFT_INCREASE_RATE = 2; // 漂移增加速率
+const DRIFT_DECREASE_RATE = 0.05; // 漂移恢复速率
+
+// 添加一个变量来记录上一次的驱动力状态
+let lastDriveState = 'N'; // 'D', 'N', 或 'R'
+
+// 添加速度限制常量
+const MAX_SPEED = 350; // 最大速度 (km/h)
+const MAX_SPEED_MS = MAX_SPEED / 3.6; // 转换为 m/s
+
 init();
 animate();
 
@@ -59,12 +73,6 @@ function init() {
     light.position.set(1, 1, 1).normalize();
     scene.add(light);
 
-    // 创建并添加地面
-    const groundGeometry = new THREE.PlaneGeometry(20, 20);
-    const groundMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 });
-    const groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
-    groundMesh.rotation.x = -Math.PI / 2;
-    scene.add(groundMesh);
 
     // 初始化Cannon.js物理世界
     world = new CANNON.World();
@@ -134,7 +142,7 @@ function init() {
     // 将车辆添加到物理世界
     vehicle.addToWorld(world);
 
-    // 为每个轮子创建Three.js网格，并添加到场景
+    // 为每个轮子���建Three.js网格，并添加到场景
     vehicle.wheelInfos.forEach((wheel) => {
         const wheelMesh = new THREE.Mesh(
             // new THREE.CylinderGeometry(wheel.radius, wheel.radius, 0.4, 32),
@@ -168,7 +176,8 @@ function init() {
 
     // 创建城市地形
 
-
+    // 添加速度表DOM元素
+    createSpeedometer();
 }
 
 
@@ -210,7 +219,7 @@ function createTerrainChunk(x, z) {
             }
         }
 
-        // 保存自然地形区块
+        // 保自然地形区块
         loadedChunks.push({ 
             x, 
             z, 
@@ -219,7 +228,7 @@ function createTerrainChunk(x, z) {
         });
 
     } else {
-        // 城市内的地形（保持原有的城市生成逻辑）
+        // 城市内的地形保持原的城市生成逻辑）
         const groundMaterial = new THREE.MeshBasicMaterial({ color: 0x333333, side: THREE.DoubleSide });
         const groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
         groundMesh.rotation.x = -Math.PI / 2;
@@ -231,26 +240,35 @@ function createTerrainChunk(x, z) {
         const buildingMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff });
 
         // 在区块范围内创建建筑物
-        for (let i = x - chunkSize/2; i < x + chunkSize/2; i += 20) {
-            for (let j = z - chunkSize/2; j < z + chunkSize/2; j += 15) {
+        for (let i = x - chunkSize / 2; i < x + chunkSize / 2; i += 20) {
+            for (let j = z - chunkSize / 2; j < z + chunkSize / 2; j += 15) {
                 const height = Math.random() * 20 + 10;
-                
+
                 // 创建建筑物网格
                 const buildingGeometry = new THREE.BoxGeometry(5, height, 5);
+                const buildingMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff });
                 const buildingMesh = new THREE.Mesh(buildingGeometry, buildingMaterial);
-                buildingMesh.position.set(i, height/2, j);
+                buildingMesh.position.set(i, height / 2, j);
                 scene.add(buildingMesh);
 
+                // 创建黑色边框
+                const borderMaterial = new THREE.LineBasicMaterial({ color: 0x000000 });
+                const borderGeometry = new THREE.BoxGeometry(5.01, height + 0, 5.01); // 边框稍微大于建筑物
+                const borderMesh = new THREE.LineSegments(new THREE.EdgesGeometry(borderGeometry), borderMaterial);
+                borderMesh.position.set(i, height / 2, j);
+                scene.add(borderMesh);
+
                 // 创建建筑物物理体
-                const buildingShape = new CANNON.Box(new CANNON.Vec3(2.5, height/2, 2.5));
+                const buildingShape = new CANNON.Box(new CANNON.Vec3(2.5, height / 2, 2.5));
                 const buildingBody = new CANNON.Body({ mass: 0 });
                 buildingBody.addShape(buildingShape);
-                buildingBody.position.set(i, height/2, j);
+                buildingBody.position.set(i, height / 2, j);
                 world.addBody(buildingBody);
 
-                buildings.push({ 
-                    mesh: buildingMesh, 
-                    body: buildingBody 
+                buildings.push({
+                    mesh: buildingMesh,
+                    body: buildingBody,
+                    border: borderMesh // 保存边框信息
                 });
             }
         }
@@ -337,6 +355,12 @@ function onKeyDown(event) {
 function onKeyUp(event) {
     // 松开键时设置对应键值为false
     keysPressed[event.key] = false;
+    
+    // 当松开前进或后退键时，检查是否需要切换到N档
+    if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && 
+        !keysPressed['ArrowUp'] && !keysPressed['ArrowDown']) {
+        lastDriveState = 'N';
+    }
 }
 
 function onMouseDown(event) {
@@ -379,13 +403,14 @@ function animate() {
     updatePhysics(); // 更新物理世界
     updateTerrain(); // 更新地形
     render(); // 渲染场景
+    updateSpeedometer();
 }
 
 function updatePhysics() {
     const maxSteerVal = 0.8; // 最大转向角
     const maxForce = 4444; // 最大发动机力
     const brakeForce = 10000000; // 刹车力
-    const assistBrakeForce = 5; // 辅助刹车力，调小了这个值
+    const assistBrakeForce = 5; // 助刹车力，调小了这个值
 
     // 根据键盘输入应用发动机力
     if (keysPressed.ArrowUp) {
@@ -488,7 +513,7 @@ if (!isFirstPersonView) {
     
     // **更新相机朝向车辆右方**
     const rightOffset = new THREE.Vector3(1, 0, 0); // 车辆的右侧方向
-    rightOffset.applyQuaternion(chassisMesh.quaternion); // 将右侧方向转化为车辆当前朝向的局部坐标系
+    rightOffset.applyQuaternion(chassisMesh.quaternion); // 将右侧方向转化为车辆当前朝的局部坐标系
     currentCameraLookAt.copy(chassisMesh.position).add(rightOffset); // 相机朝向右侧
     
     camera.position.copy(currentCameraPosition);
@@ -537,7 +562,7 @@ if (!isFirstPersonView) {
         // 应用车辆的旋转到相机
         camera.position.copy(currentCameraPosition);
         camera.quaternion.copy(chassisMesh.quaternion);
-        camera.rotateY(Math.PI / 2); // 让相机朝向右侧
+        camera.rotateY(Math.PI / 2); // 让相机��向右侧
         camera.lookAt(currentCameraLookAt);
     }
 }
@@ -545,7 +570,7 @@ if (!isFirstPersonView) {
 function updateTerrain() {
     const vehiclePosition = vehicle.chassisBody.position;
 
-    // 删除以下边界限制代码
+    // 删以下边界限制代码
     // if (vehiclePosition.x < WORLD_BOUNDS.min) vehiclePosition.x = WORLD_BOUNDS.min;
     // if (vehiclePosition.x > WORLD_BOUNDS.max) vehiclePosition.x = WORLD_BOUNDS.max;
     // if (vehiclePosition.z < WORLD_BOUNDS.min) vehiclePosition.z = WORLD_BOUNDS.min;
@@ -573,7 +598,7 @@ function updateTerrain() {
         }
     });
 
-    // 修改移除超出视距的地形块的逻辑
+    // 修改移超出视距的地形块的逻辑
     loadedChunks = loadedChunks.filter(chunk => {
         const distance = Math.sqrt(
             Math.pow(chunk.x - vehiclePosition.x, 2) + 
@@ -583,15 +608,15 @@ function updateTerrain() {
             // 移除地面
             scene.remove(chunk.mesh);
             
-            // 移除所有建筑物和自然元素
+            // 移除所有建筑物、边框和自然元素
             chunk.buildings.forEach(building => {
-                if (building.mesh instanceof THREE.Group) {
-                    // 如果是组合体（比如树），移除所有子元素
-                    building.mesh.children.forEach(child => {
-                        scene.remove(child);
-                    });
-                }
+                // 移除建筑物
                 scene.remove(building.mesh);
+                // 移除黑色边框
+                if (building.border) {
+                    scene.remove(building.border);
+                }
+                // 移除物理体
                 if (building.body) {
                     world.removeBody(building.body);
                 }
@@ -663,7 +688,7 @@ function straightenVehicle() {
     // 获取当前位置
     const currentPosition = vehicle.chassisBody.position.clone();
     
-    // 保持当前y轴旋转（朝向），但重置其他轴的旋转
+    // 保持当前y轴旋转朝向），但重置其他轴的旋转
     const currentRotation = new CANNON.Quaternion();
     vehicle.chassisBody.quaternion.copy(currentRotation);
     
@@ -695,5 +720,272 @@ function straightenVehicle() {
     
     // 唤醒物理体
     vehicle.chassisBody.wakeUp();
+}
+
+function updateVehicle() {
+    const velocity = vehicle.chassisBody.velocity;
+    const speed = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
+    const speedKmh = speed * 3.6;
+
+    // 检查是否超速
+    if (speedKmh >= MAX_SPEED) {
+        // 计算当前速度方向的单位向量
+        const directionX = velocity.x / speed;
+        const directionZ = velocity.z / speed;
+        
+        // 将速度限制在最大值
+        vehicle.chassisBody.velocity.x = directionX * MAX_SPEED_MS;
+        vehicle.chassisBody.velocity.z = directionZ * MAX_SPEED_MS;
+        
+        // 如果仍在加速，则不再施加额外的力
+        if (keysPressed['ArrowUp']) {
+            vehicle.applyEngineForce(0, 2);
+            vehicle.applyEngineForce(0, 3);
+        }
+    } else {
+        // 正常的驱动力控制
+        const maxForce = 2000;
+        if (keysPressed['ArrowUp']) {
+            vehicle.applyEngineForce(maxForce, 2);
+            vehicle.applyEngineForce(maxForce, 3);
+        } else if (keysPressed['ArrowDown']) {
+            vehicle.applyEngineForce(-maxForce / 2, 2);
+            vehicle.applyEngineForce(-maxForce / 2, 3);
+        } else {
+            vehicle.applyEngineForce(0, 2);
+            vehicle.applyEngineForce(0, 3);
+        }
+    }
+
+    // 处理漂移状态
+    if (keysPressed[' '] && speed > 10) { // 速度大于10时才能漂移
+        isDrifting = true;
+        // 逐渐增加漂移系数
+        driftFactor = Math.min(driftFactor + DRIFT_INCREASE_RATE, MAX_DRIFT_FACTOR);
+    } else {
+        isDrifting = false;
+        // 漂移系数逐渐恢复
+        driftFactor = Math.max(driftFactor - DRIFT_DECREASE_RATE, 0);
+    }
+
+    // 更新车轮转向
+    const maxSteerVal = 0.5;
+    const steerValue = maxSteerVal * (keysPressed['ArrowLeft'] ? 1 : keysPressed['ArrowRight'] ? -1 : 0);
+
+    // 应用漂移效果
+    if (isDrifting) {
+        // 在漂移时增加转向角度
+        const driftSteerMultiplier = 1.5;
+        vehicle.setSteeringValue(steerValue * driftSteerMultiplier, 0);
+        vehicle.setSteeringValue(steerValue * driftSteerMultiplier, 1);
+    } else {
+        vehicle.setSteeringValue(steerValue, 0);
+        vehicle.setSteeringValue(steerValue, 1);
+    }
+
+    // 更新车轮驱动力
+    const maxForce = 1000;
+    const brakeForce = 1000000;
+    
+    // 前进/后退控制
+    if (keysPressed['ArrowUp']) {
+        vehicle.applyEngineForce(maxForce, 2);
+        vehicle.applyEngineForce(maxForce, 3);
+    } else if (keysPressed['ArrowDown']) {
+        vehicle.applyEngineForce(-maxForce / 2, 2);
+        vehicle.applyEngineForce(-maxForce / 2, 3);
+    } else {
+        vehicle.applyEngineForce(0, 2);
+        vehicle.applyEngineForce(0, 3);
+    }
+
+    // 漂移时的特殊处理
+    if (isDrifting) {
+        // 减小后轮的摩擦力
+        vehicle.wheelInfos[2].frictionSlip = 0.5 - driftFactor;
+        vehicle.wheelInfos[3].frictionSlip = 0.5 - driftFactor;
+        
+        // 保持前轮的高摩擦力
+        vehicle.wheelInfos[0].frictionSlip = 1;
+        vehicle.wheelInfos[1].frictionSlip = 1;
+
+        // 添加侧向力以增强漂移效果
+        const driftForce = new CANNON.Vec3();
+        const rightVector = new CANNON.Vec3();
+        vehicle.chassisBody.vectorToWorldFrame(new CANNON.Vec3(1, 0, 0), rightVector);
+        rightVector.scale(speed * driftFactor * (steerValue > 0 ? -1 : 1), driftForce);
+        vehicle.chassisBody.applyImpulse(driftForce, vehicle.chassisBody.position);
+    } else {
+        // 恢复正常的轮胎摩擦力
+        for (let i = 0; i < 4; i++) {
+            vehicle.wheelInfos[i].frictionSlip = 1;
+        }
+    }
+
+    // 添加视觉效果（可选）
+    if (isDrifting && speed > 10) {
+        createDriftParticles();
+    }
+}
+
+// 添加漂移粒子效果（可选）
+function createDriftParticles() {
+    // 为后轮创建漂移痕迹
+    const wheelPositions = [
+        vehicle.wheelInfos[2].worldTransform.position,
+        vehicle.wheelInfos[3].worldTransform.position
+    ];
+
+    wheelPositions.forEach(pos => {
+        const particleGeometry = new THREE.SphereGeometry(0.1);
+        const particleMaterial = new THREE.MeshBasicMaterial({ 
+            color: 0x333333,
+            transparent: true,
+            opacity: 0.5
+        });
+        const particle = new THREE.Mesh(particleGeometry, particleMaterial);
+        
+        particle.position.set(pos.x, 0.1, pos.z);
+        scene.add(particle);
+
+        // 粒子淡出动画
+        const fadeOut = setInterval(() => {
+            particle.material.opacity -= 0.02;
+            if (particle.material.opacity <= 0) {
+                scene.remove(particle);
+                clearInterval(fadeOut);
+            }
+        }, 50);
+    });
+}
+
+// 创建速度表和挡位显示
+function createSpeedometer() {
+    const speedometer = document.createElement('div');
+    speedometer.id = 'speedometer';
+    speedometer.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        width: 150px;
+        height: 150px;
+        background: rgba(0, 0, 0, 0.7);
+        border-radius: 50%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-family: Arial, sans-serif;
+        z-index: 1000;
+    `;
+
+    // 添加挡位显示
+    const gearDisplay = document.createElement('div');
+    gearDisplay.id = 'gear-display';
+    gearDisplay.style.cssText = `
+        position: absolute;
+        top: 20px;
+        font-size: 24px;
+        font-weight: bold;
+        color: #44ff44;
+    `;
+
+    // 添加速度数值显示
+    const speedValue = document.createElement('div');
+    speedValue.id = 'speed-value';
+    speedValue.style.cssText = `
+        font-size: 36px;
+        font-weight: bold;
+        margin-bottom: 5px;
+    `;
+
+    // 添加单位显示
+    const speedUnit = document.createElement('div');
+    speedUnit.textContent = 'km/h';
+    speedUnit.style.cssText = `
+        font-size: 14px;
+        opacity: 0.8;
+    `;
+
+    // 添加速度指示器
+    const speedIndicator = document.createElement('div');
+    speedIndicator.id = 'speed-indicator';
+    speedIndicator.style.cssText = `
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        top: 0;
+        left: 0;
+        border-radius: 50%;
+        clip-path: polygon(50% 50%, 50% 0, 100% 0, 100% 100%, 0 100%, 0 0, 50% 0);
+        background: linear-gradient(90deg, #44ff44 0%, #ffff44 50%, #ff4444 100%);
+        opacity: 0.3;
+        transform-origin: center;
+    `;
+
+    // 添加速度刻度（可选）
+    const speedMarks = document.createElement('div');
+    speedMarks.style.cssText = `
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+    `;
+
+    
+    speedometer.appendChild(speedIndicator);
+    speedometer.appendChild(gearDisplay);
+    speedometer.appendChild(speedValue);
+    speedometer.appendChild(speedUnit);
+    speedometer.appendChild(speedMarks);
+    document.body.appendChild(speedometer);
+}
+
+// 更新速度表和挡位
+function updateSpeedometer() {
+    const velocity = vehicle.chassisBody.velocity;
+    const speed = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
+    const speedKmh = Math.round(speed * 3.6);
+    
+    const speedValue = document.getElementById('speed-value');
+    const speedIndicator = document.getElementById('speed-indicator');
+    const gearDisplay = document.getElementById('gear-display');
+    
+    // 更新速度显示
+    speedValue.textContent = speedKmh;
+    
+
+    // 改进的挡位判断逻辑
+    if (speed < 0.5) {
+        // 完全停止时显示N
+        gearDisplay.textContent = 'N';
+        gearDisplay.style.color = '#ffff44';
+        lastDriveState = 'N';
+    } else {
+        // 检查当前驱动输入
+        if (keysPressed['ArrowUp']) {
+            // 按下前进键
+            lastDriveState = 'D';
+        } else if (keysPressed['ArrowDown']) {
+            // 按下后退键
+            lastDriveState = 'R';
+        }
+        // 没有按键时保持上一个状态
+        
+        // 显示当前挡位
+        gearDisplay.textContent = lastDriveState;
+        switch(lastDriveState) {
+            case 'D':
+                gearDisplay.style.color = '#44ff44';
+                break;
+            case 'R':
+                gearDisplay.style.color = '#ff4444';
+                break;
+            case 'N':
+                gearDisplay.style.color = '#ffff44';
+                break;
+        }
+    }
 }
 
