@@ -39,6 +39,12 @@ let lastDriveState = 'N'; // 'D', 'N', 或 'R'
 const MAX_SPEED = 350; // 最大速度 (km/h)
 const MAX_SPEED_MS = MAX_SPEED / 3.6; // 转换为 m/s
 
+// 在文件开头添加全局变量
+let sky; // 天空盒引用
+let skyFollowCamera = true; // 控制天空盒是否跟随相机
+let sun, moon;
+let dayNightCycle = true; // 控制昼夜循环开关
+
 init();
 animate();
 
@@ -142,7 +148,7 @@ function init() {
     // 将车辆添加到物理世界
     vehicle.addToWorld(world);
 
-    // 为每个轮子���建Three.js网格，并添加到场景
+    // 为每个轮子建Three.js网格，并添加到场景
     vehicle.wheelInfos.forEach((wheel) => {
         const wheelMesh = new THREE.Mesh(
             // new THREE.CylinderGeometry(wheel.radius, wheel.radius, 0.4, 32),
@@ -175,11 +181,83 @@ function init() {
     document.addEventListener('mouseup', onMouseUp);
 
     // 创建城市地形
+    // 在初始化时预加载玩家出生点周围的区块
+    const spawnChunkX = Math.floor(SPAWN_POSITION.x / chunkSize) * chunkSize;
+    const spawnChunkZ = Math.floor(SPAWN_POSITION.z / chunkSize) * chunkSize;
+    
+    // 预加载3x3的区块网格
+    for (let x = -1; x <= 1; x++) {
+        for (let z = -1; z <= 1; z++) {
+            const chunkX = spawnChunkX + x * chunkSize;
+            const chunkZ = spawnChunkZ + z * chunkSize;
+            createTerrainChunk(chunkX, chunkZ);
+        }
+    }
 
     // 添加速度表DOM元素
     createSpeedometer();
+
+    // 创建跟随玩家的天空盒
+    createFollowingSky();
+    
+    // 创建云朵
+    createClouds();
+
+    // 添加环境光
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1);
+    scene.add(ambientLight);
 }
 
+// 添加创建云朵的函数
+function createClouds() {
+    const cloudCount = 40;
+    for (let i = 0; i < cloudCount; i++) {
+        const cloudGroup = new THREE.Group();
+        
+        // 为每朵云创建3-6个部分
+        const parts = Math.floor(Math.random() * 4) + 3;
+        for (let j = 0; j < parts; j++) {
+            const geometry = new THREE.SphereGeometry(
+                Math.random() * 5 + 3,
+                8,
+                8
+            );
+            const material = new THREE.MeshBasicMaterial({
+                color: 0xffffff,
+                transparent: true,
+                opacity: 0.8,
+                fog: false // 禁用云朵的雾效
+            });
+            const cloudPart = new THREE.Mesh(geometry, material);
+            
+            cloudPart.position.set(
+                Math.random() * 10 - 5,
+                Math.random() * 2,
+                Math.random() * 10 - 5
+            );
+            
+            cloudGroup.add(cloudPart);
+        }
+        
+        // 在更大范围内随机放置云朵
+        cloudGroup.position.set(
+            Math.random() * 1600 - 800,
+            Math.random() * 100 + 200,
+            Math.random() * 1600 - 800
+        );
+        
+        cloudGroup.userData = {
+            speed: Math.random() * 0.1 + 0.05,
+            direction: new THREE.Vector3(
+                Math.random() - 0.5,
+                0,
+                Math.random() - 0.5
+            ).normalize()
+        };
+        
+        sky.add(cloudGroup); // 将云朵添加为天空盒的子对象
+    }
+}
 
 function createTerrainChunk(x, z) {
     // 创建地面
@@ -219,7 +297,7 @@ function createTerrainChunk(x, z) {
             }
         }
 
-        // 保自然地形区块
+        // 保存自然地形区块
         loadedChunks.push({ 
             x, 
             z, 
@@ -228,7 +306,7 @@ function createTerrainChunk(x, z) {
         });
 
     } else {
-        // 城市内的地形保持原的城市生成逻辑）
+        // 城市内的地形（保持原来的城市生成逻辑）
         const groundMaterial = new THREE.MeshBasicMaterial({ color: 0x333333, side: THREE.DoubleSide });
         const groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
         groundMesh.rotation.x = -Math.PI / 2;
@@ -237,38 +315,38 @@ function createTerrainChunk(x, z) {
 
         // 在区块内创建建筑物
         const buildings = [];
-        const buildingMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff });
-
-        // 在区块范围内创建建筑物
-        for (let i = x - chunkSize / 2; i < x + chunkSize / 2; i += 20) {
-            for (let j = z - chunkSize / 2; j < z + chunkSize / 2; j += 15) {
+        for (let i = x - chunkSize/2; i < x + chunkSize/2; i += 20) {
+            for (let j = z - chunkSize/2; j < z + chunkSize/2; j += 15) {
                 const height = Math.random() * 20 + 10;
 
                 // 创建建筑物网格
                 const buildingGeometry = new THREE.BoxGeometry(5, height, 5);
                 const buildingMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff });
                 const buildingMesh = new THREE.Mesh(buildingGeometry, buildingMaterial);
-                buildingMesh.position.set(i, height / 2, j);
+                buildingMesh.position.set(i, height/2, j);
                 scene.add(buildingMesh);
 
                 // 创建黑色边框
                 const borderMaterial = new THREE.LineBasicMaterial({ color: 0x000000 });
-                const borderGeometry = new THREE.BoxGeometry(5.01, height + 0, 5.01); // 边框稍微大于建筑物
-                const borderMesh = new THREE.LineSegments(new THREE.EdgesGeometry(borderGeometry), borderMaterial);
-                borderMesh.position.set(i, height / 2, j);
+                const borderGeometry = new THREE.BoxGeometry(5.01, height + 0, 5.01);
+                const borderMesh = new THREE.LineSegments(
+                    new THREE.EdgesGeometry(borderGeometry), 
+                    borderMaterial
+                );
+                borderMesh.position.set(i, height/2, j);
                 scene.add(borderMesh);
 
                 // 创建建筑物物理体
-                const buildingShape = new CANNON.Box(new CANNON.Vec3(2.5, height / 2, 2.5));
+                const buildingShape = new CANNON.Box(new CANNON.Vec3(2.5, height/2, 2.5));
                 const buildingBody = new CANNON.Body({ mass: 0 });
                 buildingBody.addShape(buildingShape);
-                buildingBody.position.set(i, height / 2, j);
+                buildingBody.position.set(i, height/2, j);
                 world.addBody(buildingBody);
 
                 buildings.push({
                     mesh: buildingMesh,
                     body: buildingBody,
-                    border: borderMesh // 保存边框信息
+                    border: borderMesh
                 });
             }
         }
@@ -404,6 +482,15 @@ function animate() {
     updateTerrain(); // 更新地形
     render(); // 渲染场景
     updateSpeedometer();
+
+    // 更新云朵位置
+    updateClouds();
+
+    // 更新天空盒位置
+    updateSky();
+
+    // 可选：添加昼夜循环
+    updateDayNightCycle();
 }
 
 function updatePhysics() {
@@ -513,7 +600,7 @@ if (!isFirstPersonView) {
     
     // **更新相机朝向车辆右方**
     const rightOffset = new THREE.Vector3(1, 0, 0); // 车辆的右侧方向
-    rightOffset.applyQuaternion(chassisMesh.quaternion); // 将右侧方向转化为车辆当前朝的局部坐标系
+    rightOffset.applyQuaternion(chassisMesh.quaternion); // 右侧方向转为车辆当前朝的局部坐标系
     currentCameraLookAt.copy(chassisMesh.position).add(rightOffset); // 相机朝向右侧
     
     camera.position.copy(currentCameraPosition);
@@ -562,24 +649,17 @@ if (!isFirstPersonView) {
         // 应用车辆的旋转到相机
         camera.position.copy(currentCameraPosition);
         camera.quaternion.copy(chassisMesh.quaternion);
-        camera.rotateY(Math.PI / 2); // 让相机��向右侧
+        camera.rotateY(Math.PI / 2); // 让相机向右侧
         camera.lookAt(currentCameraLookAt);
     }
 }
 
 function updateTerrain() {
     const vehiclePosition = vehicle.chassisBody.position;
-
-    // 删以下边界限制代码
-    // if (vehiclePosition.x < WORLD_BOUNDS.min) vehiclePosition.x = WORLD_BOUNDS.min;
-    // if (vehiclePosition.x > WORLD_BOUNDS.max) vehiclePosition.x = WORLD_BOUNDS.max;
-    // if (vehiclePosition.z < WORLD_BOUNDS.min) vehiclePosition.z = WORLD_BOUNDS.min;
-    // if (vehiclePosition.z > WORLD_BOUNDS.max) vehiclePosition.z = WORLD_BOUNDS.max;
-
     const currentChunkX = Math.floor(vehiclePosition.x / chunkSize) * chunkSize;
     const currentChunkZ = Math.floor(vehiclePosition.z / chunkSize) * chunkSize;
 
-    // 定义一个二维区域来检测需要加载的新地形块
+    // 定义一个更大的预加载区域(3x3的区块网格)
     const adjacentChunks = [
         [0, 0], [chunkSize, 0], [-chunkSize, 0],
         [0, chunkSize], [0, -chunkSize],
@@ -598,13 +678,13 @@ function updateTerrain() {
         }
     });
 
-    // 修改移超出视距的地形块的逻辑
+    // 修改移除超出视距的地形块的逻辑
     loadedChunks = loadedChunks.filter(chunk => {
         const distance = Math.sqrt(
             Math.pow(chunk.x - vehiclePosition.x, 2) + 
             Math.pow(chunk.z - vehiclePosition.z, 2)
         );
-        if (distance > chunkSize * 2) {
+        if (distance > chunkSize * 2) { // 增加保留距离
             // 移除地面
             scene.remove(chunk.mesh);
             
@@ -990,3 +1070,224 @@ function updateSpeedometer() {
     }
 }
 
+// 添加更新云朵的函数
+function updateClouds() {
+    scene.children.forEach(child => {
+        if (child instanceof THREE.Group && child.children.length > 0 && child.userData.direction) {
+            // 确保child.userData.direction存在后再使用clone
+            child.position.add(
+                child.userData.direction.clone().multiplyScalar(child.userData.speed)
+            );
+            
+            // 如果云朵移出范围，将其传送到对面
+            const limit = 500;
+            if (child.position.x > limit) child.position.x = -limit;
+            if (child.position.x < -limit) child.position.x = limit;
+            if (child.position.z > limit) child.position.z = -limit;
+            if (child.position.z < -limit) child.position.z = limit;
+            
+            // 让云朵轻微上下浮动
+            child.position.y += Math.sin(Date.now() * 0.001) * 0.05;
+        }
+    });
+}
+
+// 添加更新天空盒的函数
+function updateSky() {
+    if (sky && vehicle) {
+        const vehiclePos = vehicle.chassisBody.position;
+        sky.position.set(vehiclePos.x, 0, vehiclePos.z);
+        
+        if (dayNightCycle) {
+            const time = Date.now() * 0.000001; // 控制昼夜循环速度
+            const dayMix = (Math.sin(time) + 1) * 0.5;
+            
+            // 更新天空颜色
+            const uniforms = sky.material.uniforms;
+            const dayTopColor = new THREE.Color(0x0077ff);
+            const dayBottomColor = new THREE.Color(0x87ceeb);
+            const nightTopColor = new THREE.Color(0x000033);
+            const nightBottomColor = new THREE.Color(0x000066);
+            
+            uniforms.topColor.value.lerpColors(nightTopColor, dayTopColor, dayMix);
+            uniforms.bottomColor.value.lerpColors(nightBottomColor, dayBottomColor, dayMix);
+            
+            // 更新太阳和月亮位置
+            const radius = 800;
+            const height = Math.sin(time) * radius;
+            const depth = Math.cos(time) * radius;
+            
+            // 太阳位置和亮度
+            sun.position.set(0, height, -depth);
+            sun.material.color.setRGB(1, dayMix * 0.5 + 0.5, dayMix * 0.3 + 0.7);
+            sun.children[0].material.opacity = dayMix; // 调整光晕
+            
+            // 月亮位置和亮度（与太阳相反）
+            moon.position.set(0, -height, depth);
+            moon.material.color.setRGB(
+                0.7 + (1 - dayMix) * 0.3,
+                0.7 + (1 - dayMix) * 0.3,
+                0.7 + (1 - dayMix) * 0.3
+            );
+            moon.children[0].material.opacity = 1 - dayMix; // 调整光晕
+            
+            // 更新环境光
+            const ambientLight = scene.children.find(child => child instanceof THREE.AmbientLight);
+            if (ambientLight) {
+                ambientLight.intensity = 0.2 + dayMix * 0.8;
+            }
+        }
+        
+        // 更新云朵
+        updateClouds();
+    }
+}
+
+// 可选：添加昼夜循环
+function updateDayNightCycle() {
+    if (sky) {
+        const time = Date.now() * 0.000001; // 控制昼夜循环速度
+        const topColor = sky.material.uniforms.topColor.value;
+        const bottomColor = sky.material.uniforms.bottomColor.value;
+        
+        // 根据时间更新天空颜色
+        const dayTop = new THREE.Color(0x0077ff);
+        const dayBottom = new THREE.Color(0x87ceeb);
+        const nightTop = new THREE.Color(0x000033);
+        const nightBottom = new THREE.Color(0x000066);
+        
+        const dayMix = (Math.sin(time) + 1) * 0.5;
+        topColor.lerpColors(nightTop, dayTop, dayMix);
+        bottomColor.lerpColors(nightBottom, dayBottom, dayMix);
+        
+        // 更新太阳/月亮位置
+        if (sky.children[0]) {
+            const celestialBody = sky.children[0];
+            celestialBody.position.y = Math.sin(time) * 800;
+            celestialBody.position.z = Math.cos(time) * 800;
+            
+            // 根据时间更改发光体颜色（太阳/月亮）
+            const sunColor = new THREE.Color(0xffffaa);
+            const moonColor = new THREE.Color(0x888888);
+            celestialBody.material.color.lerpColors(moonColor, sunColor, dayMix);
+        }
+    }
+}
+
+// 添加创建跟随天空盒的函数
+function createFollowingSky() {
+    // 创建天空球体
+    const skyGeometry = new THREE.SphereGeometry(1000, 32, 32);
+    
+    // 创建渐变材质
+    const skyMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+            topColor: { value: new THREE.Color(0x0077ff) },
+            bottomColor: { value: new THREE.Color(0x87ceeb) },
+            offset: { value: 400 },
+            exponent: { value: 0.6 }
+        },
+        vertexShader: `
+            varying vec3 vWorldPosition;
+            void main() {
+                vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+                vWorldPosition = worldPosition.xyz;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `,
+        fragmentShader: `
+            uniform vec3 topColor;
+            uniform vec3 bottomColor;
+            uniform float offset;
+            uniform float exponent;
+            varying vec3 vWorldPosition;
+            void main() {
+                float h = normalize(vWorldPosition + offset).y;
+                gl_FragColor = vec4(mix(bottomColor, topColor, max(pow(max(h, 0.0), exponent), 0.0)), 1.0);
+            }
+        `,
+        side: THREE.BackSide,
+        fog: false
+    });
+
+    sky = new THREE.Mesh(skyGeometry, skyMaterial);
+    scene.add(sky);
+
+    // 创建太阳
+    const sunGeometry = new THREE.SphereGeometry(50, 32, 32);
+    const sunMaterial = new THREE.MeshBasicMaterial({
+        color: 0xffff00,
+        fog: false
+    });
+    sun = new THREE.Mesh(sunGeometry, sunMaterial);
+    
+    // 添加太阳光晕
+    const sunGlowGeometry = new THREE.SphereGeometry(60, 32, 32);
+    const sunGlowMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+            viewVector: { value: camera.position }
+        },
+        vertexShader: `
+            uniform vec3 viewVector;
+            varying float intensity;
+            void main() {
+                vec3 vNormal = normalize(normalMatrix * normal);
+                vec3 vNormel = normalize(normalMatrix * viewVector);
+                intensity = pow(0.6 - dot(vNormal, vNormel), 2.0);
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `,
+        fragmentShader: `
+            varying float intensity;
+            void main() {
+                vec3 glow = vec3(1.0, 0.8, 0.0) * intensity;
+                gl_FragColor = vec4(glow, 1.0);
+            }
+        `,
+        side: THREE.FrontSide,
+        blending: THREE.AdditiveBlending,
+        transparent: true
+    });
+    const sunGlow = new THREE.Mesh(sunGlowGeometry, sunGlowMaterial);
+    sun.add(sunGlow);
+    sky.add(sun);
+
+    // 创建月亮
+    const moonGeometry = new THREE.SphereGeometry(40, 32, 32);
+    const moonMaterial = new THREE.MeshBasicMaterial({
+        color: 0xaaaaaa,
+        fog: false
+    });
+    moon = new THREE.Mesh(moonGeometry, moonMaterial);
+    
+    // 添加月亮光晕
+    const moonGlowGeometry = new THREE.SphereGeometry(45, 32, 32);
+    const moonGlowMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+            viewVector: { value: camera.position }
+        },
+        vertexShader: `
+            uniform vec3 viewVector;
+            varying float intensity;
+            void main() {
+                vec3 vNormal = normalize(normalMatrix * normal);
+                vec3 vNormel = normalize(normalMatrix * viewVector);
+                intensity = pow(0.6 - dot(vNormal, vNormel), 2.0);
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `,
+        fragmentShader: `
+            varying float intensity;
+            void main() {
+                vec3 glow = vec3(0.8, 0.8, 0.8) * intensity;
+                gl_FragColor = vec4(glow, 1.0);
+            }
+        `,
+        side: THREE.FrontSide,
+        blending: THREE.AdditiveBlending,
+        transparent: true
+    });
+    const moonGlow = new THREE.Mesh(moonGlowGeometry, moonGlowMaterial);
+    moon.add(moonGlow);
+    sky.add(moon);
+} 
