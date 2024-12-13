@@ -499,27 +499,40 @@ function updatePhysics() {
     const brakeForce = 10000000; // 刹车力
     const assistBrakeForce = 5; // 助刹车力，调小了这个值
 
-    // 根据键盘输入应用发动机力
-    if (keysPressed.ArrowUp) {
-        vehicle.applyEngineForce(maxForce, 1);
-        vehicle.applyEngineForce(maxForce, 3);
-        vehicle.applyEngineForce(maxForce, 0);
-        vehicle.applyEngineForce(maxForce, 2);
-    } else if (keysPressed.ArrowDown) {
-        vehicle.applyEngineForce(-maxForce, 1);
-        vehicle.applyEngineForce(-maxForce, 3);
-        vehicle.applyEngineForce(-maxForce, 0);
-        vehicle.applyEngineForce(-maxForce, 2);
-    } else {
+    // 获取车辆速度
+    const velocity = vehicle.chassisBody.velocity;
+    const speed = velocity.length();
+    const speedKmh = speed * 3.6;
+
+    // 检查是否超速
+    if (speedKmh >= MAX_SPEED) {
+        console.log("Speed Limit!");
         vehicle.applyEngineForce(0, 1);
         vehicle.applyEngineForce(0, 3);
         vehicle.applyEngineForce(0, 2);
         vehicle.applyEngineForce(0, 0);
+    } else {
+        // 根据键盘输入应用发动机力
+        if (keysPressed.ArrowUp) {
+            vehicle.applyEngineForce(maxForce, 1);
+            vehicle.applyEngineForce(maxForce, 3);
+            vehicle.applyEngineForce(maxForce, 0);
+            vehicle.applyEngineForce(maxForce, 2);
+        } else if (keysPressed.ArrowDown) {
+            vehicle.applyEngineForce(-maxForce, 1);
+            vehicle.applyEngineForce(-maxForce, 3);
+            vehicle.applyEngineForce(-maxForce, 0);
+            vehicle.applyEngineForce(-maxForce, 2);
+        } else {
+            vehicle.applyEngineForce(0, 1);
+            vehicle.applyEngineForce(0, 3);
+            vehicle.applyEngineForce(0, 2);
+            vehicle.applyEngineForce(0, 0);
+        }
     }
-   
 
     // 应用手刹刹车力
-    console.log('Space pressed:', keysPressed.Space); // 在调用 setBrake 前输出 Space 键状态
+    // console.log('Space pressed:', keysPressed.Space); // 在调用 setBrake 前输出 Space 键状态
     if (keysPressed.Space) {
         vehicle.setBrake(brakeForce, 1); // 应用刹车力到后轮
         vehicle.setBrake(brakeForce, 0); // 应用刹车力到前轮
@@ -543,10 +556,6 @@ function updatePhysics() {
     // 更新物理世界
     const timeStep = 1 / 120; // 将时间步长从1/60秒改为1/120秒
     world.step(timeStep);
-
-    // 获取车辆速度
-    const velocity = vehicle.chassisBody.velocity;
-    const speed = velocity.length();
 
     // 如果速度低于阈值,则停止车辆
     const minSpeed = 0.1; // 最小速度阈值,单位是米/秒
@@ -803,111 +812,115 @@ function straightenVehicle() {
 }
 
 // 修改车辆更新函数
-function updateVehicle() {
-    const velocity = vehicle.chassisBody.velocity;
-    const speed = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
-    const speedKmh = speed * 3.6;
+// function updateVehicle() {
+//     const velocity = vehicle.chassisBody.velocity;
+//     const speed = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
+//     const speedKmh = speed * 3.6;
 
-    // 检查是否超速
-    if (speedKmh >= MAX_SPEED) {
-        // 计算当前速度方向的单位向量
-        const directionX = velocity.x / speed;
-        const directionZ = velocity.z / speed;
+//     console.log(speedKmh);
+
+//     // 检查是否超速
+//     if (speedKmh >= MAX_SPEED) {
+//         // // 计算当前速度方向的单位向量
+//         // const directionX = velocity.x / speed;
+//         // const directionZ = velocity.z / speed;
         
-        // 将速度限制在最大值
-        vehicle.chassisBody.velocity.x = directionX * MAX_SPEED_MS;
-        vehicle.chassisBody.velocity.z = directionZ * MAX_SPEED_MS;
+//         // // 将速度限制在最大值
+//         // vehicle.chassisBody.velocity.x = directionX * MAX_SPEED_MS;
+//         // vehicle.chassisBody.velocity.z = directionZ * MAX_SPEED_MS;
         
-        // 如果仍在加速，则不再施加额外的力
-        if (keysPressed['ArrowUp']) {
-            vehicle.applyEngineForce(0, 2);
-            vehicle.applyEngineForce(0, 3);
-        }
-    } else {
-        // 正常的驱动力控制
-        const maxForce = 2000;
-        if (keysPressed['ArrowUp']) {
-            vehicle.applyEngineForce(maxForce, 2);
-            vehicle.applyEngineForce(maxForce, 3);
-        } else if (keysPressed['ArrowDown']) {
-            vehicle.applyEngineForce(-maxForce / 2, 2);
-            vehicle.applyEngineForce(-maxForce / 2, 3);
-        } else {
-            vehicle.applyEngineForce(0, 2);
-            vehicle.applyEngineForce(0, 3);
-        }
-    }
+//         // // 如果仍在加速，则不再施加额外的力
+//         // if (keysPressed['ArrowUp']) {
+//         //     vehicle.applyEngineForce(0, 2);
+//         //     vehicle.applyEngineForce(0, 3);
+//         // }
+//         vehicle.applyEngineForce(0, 2);
+//         vehicle.applyEngineForce(0, 3);
+//     } else {
+//         // 正常的驱动力控制
+//         const maxForce = 2000;
+//         if (keysPressed['ArrowUp']) {
+//             vehicle.applyEngineForce(maxForce, 2);
+//             vehicle.applyEngineForce(maxForce, 3);
+//         } else if (keysPressed['ArrowDown']) {
+//             vehicle.applyEngineForce(-maxForce / 2, 2);
+//             vehicle.applyEngineForce(-maxForce / 2, 3);
+//         } else {
+//             vehicle.applyEngineForce(0, 2);
+//             vehicle.applyEngineForce(0, 3);
+//         }
+//     }
 
-    // 处理漂移状态
-    if (keysPressed[' '] && speed > 10) { // 速度大于10时才能漂移
-        isDrifting = true;
-        // 逐渐增加漂移系数
-        driftFactor = Math.min(driftFactor + DRIFT_INCREASE_RATE, MAX_DRIFT_FACTOR);
-    } else {
-        isDrifting = false;
-        // 漂移系数逐渐恢复
-        driftFactor = Math.max(driftFactor - DRIFT_DECREASE_RATE, 0);
-    }
+//     // 处理漂移状态
+//     if (keysPressed[' '] && speed > 10) { // 速度大于10时才能漂移
+//         isDrifting = true;
+//         // 逐渐增加漂移系数
+//         driftFactor = Math.min(driftFactor + DRIFT_INCREASE_RATE, MAX_DRIFT_FACTOR);
+//     } else {
+//         isDrifting = false;
+//         // 漂移系数逐渐恢复
+//         driftFactor = Math.max(driftFactor - DRIFT_DECREASE_RATE, 0);
+//     }
 
-    // 更新车轮转向
-    const maxSteerVal = 0.5;
-    const steerValue = maxSteerVal * (keysPressed['ArrowLeft'] ? 1 : keysPressed['ArrowRight'] ? -1 : 0);
+//     // 更新车轮转向
+//     const maxSteerVal = 0.5;
+//     const steerValue = maxSteerVal * (keysPressed['ArrowLeft'] ? 1 : keysPressed['ArrowRight'] ? -1 : 0);
 
-    // 应用漂移效果
-    if (isDrifting) {
-        // 在漂移时增加转向角度
-        const driftSteerMultiplier = 1.5;
-        vehicle.setSteeringValue(steerValue * driftSteerMultiplier, 0);
-        vehicle.setSteeringValue(steerValue * driftSteerMultiplier, 1);
-    } else {
-        vehicle.setSteeringValue(steerValue, 0);
-        vehicle.setSteeringValue(steerValue, 1);
-    }
+//     // 应用漂移效果
+//     if (isDrifting) {
+//         // 在漂移时增加转向角度
+//         const driftSteerMultiplier = 1.5;
+//         vehicle.setSteeringValue(steerValue * driftSteerMultiplier, 0);
+//         vehicle.setSteeringValue(steerValue * driftSteerMultiplier, 1);
+//     } else {
+//         vehicle.setSteeringValue(steerValue, 0);
+//         vehicle.setSteeringValue(steerValue, 1);
+//     }
 
-    // 更新车轮驱动力
-    const maxForce = 1000;
-    const brakeForce = 1000000;
+//     // 更新车轮驱动力
+//     const maxForce = 1000;
+//     const brakeForce = 1000000;
     
-    // 前进/后退控制
-    if (keysPressed['ArrowUp']) {
-        vehicle.applyEngineForce(maxForce, 2);
-        vehicle.applyEngineForce(maxForce, 3);
-    } else if (keysPressed['ArrowDown']) {
-        vehicle.applyEngineForce(-maxForce / 2, 2);
-        vehicle.applyEngineForce(-maxForce / 2, 3);
-    } else {
-        vehicle.applyEngineForce(0, 2);
-        vehicle.applyEngineForce(0, 3);
-    }
+//     // 前进/后退控制
+//     if (keysPressed['ArrowUp']) {
+//         vehicle.applyEngineForce(maxForce, 2);
+//         vehicle.applyEngineForce(maxForce, 3);
+//     } else if (keysPressed['ArrowDown']) {
+//         vehicle.applyEngineForce(-maxForce / 2, 2);
+//         vehicle.applyEngineForce(-maxForce / 2, 3);
+//     } else {
+//         vehicle.applyEngineForce(0, 2);
+//         vehicle.applyEngineForce(0, 3);
+//     }
 
-    // 漂移时的特殊处理
-    if (isDrifting) {
-        // 减小后轮的摩擦力
-        vehicle.wheelInfos[2].frictionSlip = 0.5 - driftFactor;
-        vehicle.wheelInfos[3].frictionSlip = 0.5 - driftFactor;
+//     // 漂移时的特殊处理
+//     if (isDrifting) {
+//         // 减小后轮的摩擦力
+//         vehicle.wheelInfos[2].frictionSlip = 0.5 - driftFactor;
+//         vehicle.wheelInfos[3].frictionSlip = 0.5 - driftFactor;
         
-        // 保持前轮的高摩擦力
-        vehicle.wheelInfos[0].frictionSlip = 1;
-        vehicle.wheelInfos[1].frictionSlip = 1;
+//         // 保持前轮的高摩擦力
+//         vehicle.wheelInfos[0].frictionSlip = 1;
+//         vehicle.wheelInfos[1].frictionSlip = 1;
 
-        // 添加侧向力以增强漂移效果
-        const driftForce = new CANNON.Vec3();
-        const rightVector = new CANNON.Vec3();
-        vehicle.chassisBody.vectorToWorldFrame(new CANNON.Vec3(1, 0, 0), rightVector);
-        rightVector.scale(speed * driftFactor * (steerValue > 0 ? -1 : 1), driftForce);
-        vehicle.chassisBody.applyImpulse(driftForce, vehicle.chassisBody.position);
-    } else {
-        // 恢复正常的轮胎摩擦力
-        for (let i = 0; i < 4; i++) {
-            vehicle.wheelInfos[i].frictionSlip = 1;
-        }
-    }
+//         // 添加侧向力以增强漂移效果
+//         const driftForce = new CANNON.Vec3();
+//         const rightVector = new CANNON.Vec3();
+//         vehicle.chassisBody.vectorToWorldFrame(new CANNON.Vec3(1, 0, 0), rightVector);
+//         rightVector.scale(speed * driftFactor * (steerValue > 0 ? -1 : 1), driftForce);
+//         vehicle.chassisBody.applyImpulse(driftForce, vehicle.chassisBody.position);
+//     } else {
+//         // 恢复正常的轮胎摩擦力
+//         for (let i = 0; i < 4; i++) {
+//             vehicle.wheelInfos[i].frictionSlip = 1;
+//         }
+//     }
 
-    // 添加视觉效果（可选）
-    if (isDrifting && speed > 10) {
-        createDriftParticles();
-    }
-}
+//     // 添加视觉效果（可选）
+//     if (isDrifting && speed > 10) {
+//         createDriftParticles();
+//     }
+// }
 
 // 添加漂移粒子效果（可选）
 function createDriftParticles() {
