@@ -306,7 +306,7 @@ function createTerrainChunk(x, z) {
         });
 
     } else {
-        // 城市内的地形（保持原来的城市生成逻辑）
+        // 城市内的地��（保持原来的城市生成逻辑）
         const groundMaterial = new THREE.MeshBasicMaterial({ color: 0x333333, side: THREE.DoubleSide });
         const groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
         groundMesh.rotation.x = -Math.PI / 2;
@@ -484,7 +484,7 @@ function animate() {
     updateSpeedometer();
 
     // 更新云朵位置
-    updateClouds();
+    // updateClouds();/*  */
 
     // 更新天空盒位置
     updateSky();
@@ -503,6 +503,9 @@ function updatePhysics() {
     const velocity = vehicle.chassisBody.velocity;
     const speed = velocity.length();
     const speedKmh = speed * 3.6;
+
+    // ADS 自动刹车避障
+    checkObstaclesAndBrake();
 
     // 检查是否超速
     if (speedKmh >= MAX_SPEED) {
@@ -697,7 +700,7 @@ function updateTerrain() {
             // 移除地面
             scene.remove(chunk.mesh);
             
-            // 移除所有建筑物、边框和自然元素
+            // 移除所有��筑物、边框和自然元素
             chunk.buildings.forEach(building => {
                 // 移除建筑物
                 scene.remove(building.mesh);
@@ -1099,7 +1102,7 @@ function updateClouds() {
             if (child.position.z > limit) child.position.z = -limit;
             if (child.position.z < -limit) child.position.z = limit;
             
-            // 让云朵轻微上下浮动
+            // 让云朵轻��上下浮动
             child.position.y += Math.sin(Date.now() * 0.001) * 0.05;
         }
     });
@@ -1303,4 +1306,39 @@ function createFollowingSky() {
     const moonGlow = new THREE.Mesh(moonGlowGeometry, moonGlowMaterial);
     moon.add(moonGlow);
     sky.add(moon);
+} 
+
+// 添加 ADS 自动刹车避障函数
+function checkObstaclesAndBrake() {
+    const raycaster = new THREE.Raycaster();
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(chassisMesh.quaternion);
+    raycaster.set(chassisMesh.position, forward);
+
+    // 检测前方是否有障碍物
+    const intersects = raycaster.intersectObjects(scene.children, true);
+    if (intersects.length > 0) {
+        const distance = intersects[0].distance;
+        const velocity = vehicle.chassisBody.velocity;
+        const speed = velocity.length();
+
+        // 根据速度和距离计算刹车力
+        const maxBrakeForce = 10000; // 最大刹车力
+        const safeDistance = speed * 2; // 根据速度调整安全距离
+
+        if (distance < safeDistance) {
+            // 计算需要的刹车力，确保在撞到障碍物之前停下来
+            const brakeForce = maxBrakeForce * (1 - distance / safeDistance);
+
+            // 应用刹车力到所有轮子
+            vehicle.setBrake(brakeForce, 0);
+            vehicle.setBrake(brakeForce, 1);
+            vehicle.setBrake(brakeForce, 2);
+            vehicle.setBrake(brakeForce, 3);
+
+            // 如果速度很小且距离很近，则完全停止车辆
+            if (speed < 1 && distance < 2) {
+                vehicle.chassisBody.velocity.set(0, 0, 0);
+            }
+        }
+    }
 } 
