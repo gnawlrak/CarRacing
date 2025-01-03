@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
+import io from 'socket.io-client';
 
 let scene, camera, renderer;
 let world, vehicle;
@@ -44,6 +45,14 @@ let sky; // 天空盒引用
 let skyFollowCamera = true; // 控制天空盒是否跟随相机
 let sun, moon;
 let dayNightCycle = true; // 控制昼夜循环开关
+
+// 在文件开头添加socket.io相关变量
+let socket;
+let otherPlayers = new Map(); // 存储其他玩家信息
+let playerId = ''; // 当前玩家ID
+
+// 在文件开头添加调试标志
+const DEBUG = true;
 
 init();
 animate();
@@ -206,6 +215,9 @@ function init() {
     // 添加环境光
     const ambientLight = new THREE.AmbientLight(0xffffff, 1);
     scene.add(ambientLight);
+
+    // 初始化socket连接
+    initSocketEvents();
 }
 
 // 添加创建云朵的函数
@@ -306,7 +318,7 @@ function createTerrainChunk(x, z) {
         });
 
     } else {
-        // 城市内的地��（保持原来的城市生成逻辑）
+        // 城市内的地（保持原来的城市生成逻辑）
         const groundMaterial = new THREE.MeshBasicMaterial({ color: 0x333333, side: THREE.DoubleSide });
         const groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
         groundMesh.rotation.x = -Math.PI / 2;
@@ -491,6 +503,14 @@ function animate() {
 
     // 可选：添加昼夜循环
     updateDayNightCycle();
+
+    // 发送位置更新
+    if(socket && chassisMesh) {
+        socket.emit('update_position', {
+            position: chassisMesh.position,
+            quaternion: chassisMesh.quaternion
+        });
+    }
 }
 
 function updatePhysics() {
@@ -504,8 +524,6 @@ function updatePhysics() {
     const speed = velocity.length();
     const speedKmh = speed * 3.6;
 
-    // ADS 自动刹车避障
-    checkObstaclesAndBrake();
 
     // 检查是否超速
     if (speedKmh >= MAX_SPEED) {
@@ -700,7 +718,7 @@ function updateTerrain() {
             // 移除地面
             scene.remove(chunk.mesh);
             
-            // 移除所有��筑物、边框和自然元素
+            // 移除所有建筑物、边框和自然元素
             chunk.buildings.forEach(building => {
                 // 移除建筑物
                 scene.remove(building.mesh);
@@ -1102,7 +1120,7 @@ function updateClouds() {
             if (child.position.z > limit) child.position.z = -limit;
             if (child.position.z < -limit) child.position.z = limit;
             
-            // 让云朵轻��上下浮动
+            // 让云朵轻上下浮动
             child.position.y += Math.sin(Date.now() * 0.001) * 0.05;
         }
     });
@@ -1308,37 +1326,141 @@ function createFollowingSky() {
     sky.add(moon);
 } 
 
-// 添加 ADS 自动刹车避障函数
-function checkObstaclesAndBrake() {
-    const raycaster = new THREE.Raycaster();
-    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(chassisMesh.quaternion);
-    raycaster.set(chassisMesh.position, forward);
+// 添加3D文本显示玩家ID的函数
+function createPlayerLabel(id) {
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    canvas.width = 256;
+    canvas.height = 64;
+    
+    context.fillStyle = '#ffffff';
+    context.font = '32px Arial';
+    context.textAlign = 'center';
+    context.fillText(id, 128, 40);
+    
+    const texture = new THREE.CanvasTexture(canvas);
+    const material = new THREE.SpriteMaterial({ map: texture });
+    const sprite = new THREE.Sprite(material);
+    sprite.scale.set(2, 0.5, 1);
+    sprite.position.y = 2; // 位于车顶上方
+    
+    return sprite;
+}
 
-    // 检测前方是否有障碍物
-    const intersects = raycaster.intersectObjects(scene.children, true);
-    if (intersects.length > 0) {
-        const distance = intersects[0].distance;
-        const velocity = vehicle.chassisBody.velocity;
-        const speed = velocity.length();
-
-        // 根据速度和距离计算刹车力
-        const maxBrakeForce = 10000; // 最大刹车力
-        const safeDistance = speed * 2; // 根据速度调整安全距离
-
-        if (distance < safeDistance) {
-            // 计算需要的刹车力，确保在撞到障碍物之前停下来
-            const brakeForce = maxBrakeForce * (1 - distance / safeDistance);
-
-            // 应用刹车力到所有轮子
-            vehicle.setBrake(brakeForce, 0);
-            vehicle.setBrake(brakeForce, 1);
-            vehicle.setBrake(brakeForce, 2);
-            vehicle.setBrake(brakeForce, 3);
-
-            // 如果速度很小且距离很近，则完全停止车辆
-            if (speed < 1 && distance < 2) {
-                vehicle.chassisBody.velocity.set(0, 0, 0);
-            }
-        }
+// 修改初始化其他玩家的函数
+function initOtherPlayer(playerData) {
+    if(DEBUG) console.log('Initializing other player:', playerData);
+    
+    // 检查玩家是否已存在，使用socketId检查
+    if(Array.from(otherPlayers.values()).some(p => p.socketId === playerData.socketId)) {
+        if(DEBUG) console.log('Player already exists:', playerData.socketId);
+        return;
     }
-} 
+
+    // 创建其他玩家的车辆模型
+    const otherChassisGeometry = new THREE.BoxGeometry(4, 1, 2);
+    const otherChassisMaterial = new THREE.MeshBasicMaterial({ 
+        color: 0xff0000,
+        transparent: false,
+        opacity: 1
+    });
+    const otherChassisMesh = new THREE.Mesh(otherChassisGeometry, otherChassisMaterial);
+    
+    // 设置初始位置
+    if(playerData.position) {
+        otherChassisMesh.position.copy(playerData.position);
+    }
+    if(playerData.quaternion) {
+        otherChassisMesh.quaternion.copy(playerData.quaternion);
+    }
+    
+    // 创建ID标签
+    const label = createPlayerLabel(playerData.id);
+    otherChassisMesh.add(label);
+    
+    scene.add(otherChassisMesh);
+    
+    // 使用socketId作为Map的key
+    otherPlayers.set(playerData.socketId, {
+        mesh: otherChassisMesh,
+        label: label,
+        id: playerData.id,
+        socketId: playerData.socketId
+    });
+
+    if(DEBUG) console.log('Other player initialized:', playerData.id);
+    if(DEBUG) console.log('Current other players:', otherPlayers);
+}
+
+// 修改socket事件处理
+function initSocketEvents() {
+    socket = io('http://localhost:3001', {
+        transports: ['websocket', 'polling']
+    });
+
+    socket.on('connect', () => {
+        if(DEBUG) console.log('Connected to server');
+    });
+    
+    socket.on('players', players => {
+        if(DEBUG) console.log('Received players list:', players);
+        players.forEach(player => {
+            if(player.id !== playerId) {
+                initOtherPlayer(player);
+            }
+        });
+    });
+    
+    socket.on('player_joined', data => {
+        if(DEBUG) console.log('Player joined:', data);
+        if(data.id !== playerId) {
+            initOtherPlayer(data);
+        }
+    });
+    
+    socket.on('player_left', socketId => {
+        if(DEBUG) console.log('Player left:', socketId);
+        const player = otherPlayers.get(socketId);
+        if(player) {
+            scene.remove(player.mesh);
+            otherPlayers.delete(socketId);
+            if(DEBUG) console.log('Removed player:', socketId);
+        }
+    });
+    
+    socket.on('player_moved', data => {
+        if(DEBUG) console.log('Player moved:', data);
+        // 遍历所有玩家找到匹配的ID
+        otherPlayers.forEach((player, socketId) => {
+            if(player.id === data.id) {
+                player.mesh.position.copy(data.position);
+                player.mesh.quaternion.copy(data.quaternion);
+            }
+        });
+    });
+    
+    socket.on('join_failed', message => {
+        document.getElementById('error-message').textContent = message;
+    });
+}
+
+// 修改joinGame函数
+window.joinGame = function() {
+    const idInput = document.getElementById('player-id');
+    playerId = idInput.value.trim();
+    
+    if(playerId) {
+        if(DEBUG) console.log('Joining game with ID:', playerId);
+        socket.emit('join', playerId);
+        document.getElementById('login-screen').style.display = 'none';
+        
+        // 为当前玩家的车辆添加ID标签
+        const label = createPlayerLabel(playerId);
+        chassisMesh.add(label);
+    } else {
+        document.getElementById('error-message').textContent = '请输入有效的ID';
+    }
+}
+
+
+

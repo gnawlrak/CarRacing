@@ -12,7 +12,13 @@ module.exports = {
         },
         compress: true,
         port: 3000,  // 可以指定一个端口，默认是 8080
-        open: true  // 自动打开浏览器窗口
+        open: true,  // 自动打开浏览器窗口
+        proxy: [{
+            context: ['/socket.io'],
+            target: 'http://localhost:3001',
+            ws: true,
+            changeOrigin: true
+        }]
     },
     module: {
         rules: [
