@@ -1430,11 +1430,45 @@ function initSocketEvents() {
     
     socket.on('player_moved', data => {
         if(DEBUG) console.log('Player moved:', data);
-        // 遍历所有玩家找到匹配的ID
+        
+        // 防止更新自己的位置
+        if(data.id === playerId) {
+            return;
+        }
+        
+        // 遍历所有玩家查找匹配的ID
         otherPlayers.forEach((player, socketId) => {
-            if(player.id === data.id) {
-                player.mesh.position.copy(data.position);
-                player.mesh.quaternion.copy(data.quaternion);
+            if(player.id === data.id && player.mesh) {
+                // 安全地更新位置
+                if(data.position) {
+                    player.mesh.position.set(
+                        parseFloat(data.position.x) || 0,
+                        Math.max(parseFloat(data.position.y) || 1, 1), // 确保y至少为1
+                        parseFloat(data.position.z) || 0
+                    );
+                }
+                
+                // 安全地更新旋转
+                if(data.quaternion) {
+                    if(Array.isArray(data.quaternion)) {
+                        player.mesh.quaternion.set(
+                            parseFloat(data.quaternion[0]) || 0,
+                            parseFloat(data.quaternion[1]) || 0,
+                            parseFloat(data.quaternion[2]) || 0,
+                            parseFloat(data.quaternion[3]) || 1
+                        );
+                    } else {
+                        player.mesh.quaternion.set(
+                            parseFloat(data.quaternion.x) || 0,
+                            parseFloat(data.quaternion.y) || 0,
+                            parseFloat(data.quaternion.z) || 0,
+                            parseFloat(data.quaternion.w) || 1
+                        );
+                    }
+                }
+                
+                // 确保可见性
+                player.mesh.visible = true;
             }
         });
     });
