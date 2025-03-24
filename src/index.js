@@ -1380,9 +1380,29 @@ function initOtherPlayer(playerData) {
     
     scene.add(otherChassisMesh);
     
+    // 创建物理碰撞体
+    const otherChassisShape = new CANNON.Box(new CANNON.Vec3(2, 0.5, 1)); // 与视觉模型大小匹配
+    const otherChassisBody = new CANNON.Body({ 
+        mass: 1000,  // 与玩家车辆相同的质量
+        material: new CANNON.Material('otherVehicle')
+    });
+    otherChassisBody.addShape(otherChassisShape);
+    
+    // 设置物理体的初始位置和旋转
+    if(playerData.position) {
+        otherChassisBody.position.copy(playerData.position);
+    }
+    if(playerData.quaternion) {
+        otherChassisBody.quaternion.copy(playerData.quaternion);
+    }
+    
+    // 添加到物理世界
+    world.addBody(otherChassisBody);
+    
     // 使用socketId作为Map的key
     otherPlayers.set(playerData.socketId, {
         mesh: otherChassisMesh,
+        body: otherChassisBody,  // 保存物理体引用
         label: label,
         id: playerData.id,
         socketId: playerData.socketId
@@ -1394,7 +1414,7 @@ function initOtherPlayer(playerData) {
 
 // 修改socket事件处理
 function initSocketEvents() {
-    socket = io('http://localhost:3001', {
+    socket = io('/', {
         transports: ['websocket', 'polling']
     });
 
