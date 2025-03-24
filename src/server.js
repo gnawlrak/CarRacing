@@ -17,6 +17,22 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, '../dist/index.html'));
 });
 
+// 定义出生点区域
+const SPAWN_CENTER = { x: 0, y: 1, z: 0 };
+const SPAWN_RADIUS = 20;
+
+// 生成随机出生点
+function generateRandomSpawnPoint() {
+    const angle = Math.random() * Math.PI * 2;
+    const radius = Math.random() * SPAWN_RADIUS;
+    
+    return {
+        x: SPAWN_CENTER.x + radius * Math.cos(angle),
+        y: SPAWN_CENTER.y,
+        z: SPAWN_CENTER.z + radius * Math.sin(angle)
+    };
+}
+
 const players = new Map();
 
 io.on('connection', socket => {
@@ -31,11 +47,14 @@ io.on('connection', socket => {
             return;
         }
         
+        // 生成随机出生点
+        const spawnPosition = generateRandomSpawnPoint();
+        
         // 存储玩家信息
         players.set(socket.id, {
             id: playerId,
             socketId: socket.id,
-            position: { x: 0, y: 1, z: 0 },
+            position: spawnPosition,
             quaternion: { x: 0, y: 0, z: 0, w: 1 }
         });
         
@@ -48,7 +67,7 @@ io.on('connection', socket => {
         socket.broadcast.emit('player_joined', {
             id: playerId,
             socketId: socket.id,
-            position: { x: 0, y: 1, z: 0 },
+            position: spawnPosition,
             quaternion: { x: 0, y: 0, z: 0, w: 1 }
         });
     });
@@ -58,6 +77,35 @@ io.on('connection', socket => {
         if(player) {
             player.position = data.position;
             player.quaternion = data.quaternion;
+
+            // 计算速度 (假设客户端发送位置更新的频率足够高，可以近似计算速度)
+            const previousPosition = player.positionBeforeUpdate || player.position; // 初始位置
+            const currentPosition = data.position;
+
+            const dx = currentPosition.x - previousPosition.x;
+            const dy = currentPosition.y - previousPosition.y;
+            const dz = currentPosition.z - previousPosition.z;
+
+            const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            // 假设更新频率为 60 FPS (可以根据实际情况调整)
+            const timeStep = 1/60;
+            const speed = distance / timeStep;
+            const speedKmh = speed * 3.6;
+
+            const MAX_SPEED = 350; // 最大速度 (km/h)
+
+            if (speedKmh > MAX_SPEED) {
+                console.log(`Server Speed Limit Exceeded for player ${player.id}: ${speedKmh.toFixed(2)} km/h`);
+                // 向客户端发送超速警告，并指示客户端减速
+                socket.emit('speed_limit_exceeded');
+            }
+
+            // 更新玩家位置
+            player.position = data.position;
+            player.quaternion = data.quaternion;
+            // 保存当前位置，用于下次速度计算
+            player.positionBeforeUpdate = currentPosition;
+
             socket.broadcast.emit('player_moved', {
                 id: player.id,
                 position: data.position,

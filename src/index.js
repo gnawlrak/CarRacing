@@ -1,3 +1,9 @@
+let currentCollisionProtection = null;
+let respawnTimeout = null;
+let isBoosting = false; // 跟踪是否处于加速模式
+let currentMaxSpeed = MAX_SPEED; // 当前最大速度，默认为普通速度
+let boostTimer; // 用于存储加速计时器
+
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import io from 'socket.io-client';
@@ -39,6 +45,8 @@ let lastDriveState = 'N'; // 'D', 'N', 或 'R'
 // 添加速度限制常量
 const MAX_SPEED = 350; // 最大速度 (km/h)
 const MAX_SPEED_MS = MAX_SPEED / 3.6; // 转换为 m/s
+const BOOST_MAX_SPEED = 450; // 加速模式下的最大速度 (km/h)
+const BOOST_MAX_SPEED_MS = BOOST_MAX_SPEED / 3.6; // 转换为 m/s
 
 // 在文件开头添加全局变量
 let sky; // 天空盒引用
@@ -106,7 +114,12 @@ function init() {
 
     // 创建车体物理体
     const chassisShape = new CANNON.Box(new CANNON.Vec3(2, 0.5, 1));
-    const chassisBody = new CANNON.Body({ mass: 1000 });
+    const chassisBody = new CANNON.Body({ 
+        mass: 1000,
+        material: new CANNON.Material('vehicle'), // 添加材质以匹配接触材质定义
+        collisionFilterGroup: 1,  // 将玩家设置为组1
+        collisionFilterMask: 1 | 2  // 可以与组1(玩家)和组2(其他玩家)碰撞
+    });
     chassisBody.addShape(chassisShape);
     chassisBody.position.set(0, 1, 0);
 
@@ -350,7 +363,10 @@ function createTerrainChunk(x, z) {
 
                 // 创建建筑物物理体
                 const buildingShape = new CANNON.Box(new CANNON.Vec3(2.5, height/2, 2.5));
-                const buildingBody = new CANNON.Body({ mass: 0 });
+                const buildingBody = new CANNON.Body({
+                    mass: 0,
+                    collisionFilterGroup: 2 // 设置建筑物为 Group 2 (环境)
+                });
                 buildingBody.addShape(buildingShape);
                 buildingBody.position.set(i, height/2, j);
                 world.addBody(buildingBody);
@@ -524,10 +540,108 @@ function updatePhysics() {
     const speed = velocity.length();
     const speedKmh = speed * 3.6;
 
+    // 定期检查距离车辆过远的碰撞体，可能是残留的
+    if (Math.random() < 0.01) { // 大约每100帧检查一次
+        // 检查所有物理体，清理远离任何玩家但又在世界中的碰撞体
+        const maxDistanceFromAnyPlayer = 100; // 超过此距离的物理体将被清理
+        const bodies = world.bodies.slice();
+        
+        bodies.forEach(body => {
+            // 跳过地面和建筑物等固定物体
+            if (body.mass === 0) {
+                return;
+            }
+            
+            // 跳过玩家车辆
+            if (body === vehicle.chassisBody) {
+                return;
+            }
+            
+            // 检查是否是其他玩家的车辆
+            let isOtherPlayerBody = false;
+            for (const player of otherPlayers.values()) {
+                if (player.body === body) {
+                    isOtherPlayerBody = true;
+                    break;
+                }
+            }
+            
+            // 如果是其他玩家的车辆，确保它仍在世界的合理范围内
+            if (isOtherPlayerBody) {
+                // 判断此物体是否远离所有玩家
+                let nearAnyPlayer = false;
+                
+                // 检查与本地玩家的距离
+                const dxLocal = body.position.x - vehicle.chassisBody.position.x;
+                const dyLocal = body.position.y - vehicle.chassisBody.position.y;
+                const dzLocal = body.position.z - vehicle.chassisBody.position.z;
+                const distanceToLocalPlayer = Math.sqrt(dxLocal*dxLocal + dyLocal*dyLocal + dzLocal*dzLocal);
+                
+                if (distanceToLocalPlayer < maxDistanceFromAnyPlayer) {
+                    nearAnyPlayer = true;
+                } else {
+                    // 检查与其他玩家的距离
+                    for (const player of otherPlayers.values()) {
+                        if (player.body !== body && player.body) { // 不是当前检查的物体
+                            const dx = body.position.x - player.body.position.x;
+                            const dy = body.position.y - player.body.position.y;
+                            const dz = body.position.z - player.body.position.z;
+                            const distance = Math.sqrt(dx*dx + dy*dy + dz*dz);
+                            
+                            if (distance < maxDistanceFromAnyPlayer) {
+                                nearAnyPlayer = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                // 如果远离所有玩家，可能是残留的碰撞体，将其移除
+                if (!nearAnyPlayer) {
+                    if(DEBUG) console.log('Found orphaned collision body far from all players, removing it');
+                    // 尝试找到对应的玩家并在socketId中注销
+                    for (const [socketId, player] of otherPlayers.entries()) {
+                        if (player.body === body) {
+                            // 从物理世界移除
+                            world.removeBody(body);
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+    }
 
-    // 检查是否超速
-    if (speedKmh >= MAX_SPEED) {
-        console.log("Speed Limit!");
+    // 检测空格键是否按下以进入加速模式
+    if (keysPressed.Space) {
+        if (!isBoosting) {
+            isBoosting = true;
+            currentMaxSpeed = BOOST_MAX_SPEED; // 切换到加速模式最大速度
+            document.getElementById('speedometer').style.background = 'rgba(255, 0, 0, 0.7)'; // 速度表变为红色
+
+            // 设置加速模式计时器，20秒后结束加速模式 (只在第一次按下空格键时设置)
+            boostTimer = setTimeout(() => {
+                isBoosting = false;
+                currentMaxSpeed = MAX_SPEED; // 恢复正常最大速度
+                document.getElementById('speedometer').style.background = 'rgba(0, 0, 0, 0.7)'; // 速度表恢复正常
+            }, 20000); // 20秒
+        }
+    } else {
+        // 如果空格键松开，且当前处于加速模式，则取消加速模式
+        if (isBoosting) {
+            isBoosting = false;
+            currentMaxSpeed = MAX_SPEED; // 恢复正常最大速度
+            document.getElementById('speedometer').style.background = 'rgba(0, 0, 0, 0.7)'; // 速度表恢复正常
+            clearTimeout(boostTimer); // 清除加速计时器
+        }
+    }
+
+    // 更新当前最大速度 (用于速度限制判断)
+    currentMaxSpeed = isBoosting ? BOOST_MAX_SPEED : MAX_SPEED;
+
+    // 检查是否超速 (使用 currentMaxSpeed)
+    if (speedKmh >= currentMaxSpeed) {
+        console.log("Speed Limit! (Boost Mode: " + isBoosting + ")");
         vehicle.applyEngineForce(0, 1);
         vehicle.applyEngineForce(0, 3);
         vehicle.applyEngineForce(0, 2);
@@ -554,7 +668,7 @@ function updatePhysics() {
 
     // 应用手刹刹车力
     // console.log('Space pressed:', keysPressed.Space); // 在调用 setBrake 前输出 Space 键状态
-    if (keysPressed.Space) {
+    if (keysPressed.Space && !keysPressed.ArrowUp) { // 仅在没有加速时空格键才刹车
         vehicle.setBrake(brakeForce, 1); // 应用刹车力到后轮
         vehicle.setBrake(brakeForce, 0); // 应用刹车力到前轮
     } else {
@@ -791,6 +905,15 @@ function resetVehicle() {
     
     // 更新车辆的物理状态
     vehicle.chassisBody.wakeUp();
+    
+    // 清除现有的碰撞保护
+    if (currentCollisionProtection) {
+        currentCollisionProtection.cleanup();
+        currentCollisionProtection = null;
+    }
+    
+    // 重生时提供3秒临时碰撞保护
+    currentCollisionProtection = provideTempCollisionProtection(null, 3000);
 }
 
 // 添加转正函数
@@ -830,118 +953,61 @@ function straightenVehicle() {
     
     // 唤醒物理体
     vehicle.chassisBody.wakeUp();
+
+    // 清除现有的碰撞保护
+    if (currentCollisionProtection) {
+        currentCollisionProtection.cleanup();
+        currentCollisionProtection = null;
+    }
+
+    // 转正时提供3秒临时碰撞保护
+    currentCollisionProtection = provideTempCollisionProtection(null, 3000);
 }
 
-// 修改车辆更新函数
-// function updateVehicle() {
-//     const velocity = vehicle.chassisBody.velocity;
-//     const speed = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
-//     const speedKmh = speed * 3.6;
-
-//     console.log(speedKmh);
-
-//     // 检查是否超速
-//     if (speedKmh >= MAX_SPEED) {
-//         // // 计算当前速度方向的单位向量
-//         // const directionX = velocity.x / speed;
-//         // const directionZ = velocity.z / speed;
-        
-//         // // 将速度限制在最大值
-//         // vehicle.chassisBody.velocity.x = directionX * MAX_SPEED_MS;
-//         // vehicle.chassisBody.velocity.z = directionZ * MAX_SPEED_MS;
-        
-//         // // 如果仍在加速，则不再施加额外的力
-//         // if (keysPressed['ArrowUp']) {
-//         //     vehicle.applyEngineForce(0, 2);
-//         //     vehicle.applyEngineForce(0, 3);
-//         // }
-//         vehicle.applyEngineForce(0, 2);
-//         vehicle.applyEngineForce(0, 3);
-//     } else {
-//         // 正常的驱动力控制
-//         const maxForce = 2000;
-//         if (keysPressed['ArrowUp']) {
-//             vehicle.applyEngineForce(maxForce, 2);
-//             vehicle.applyEngineForce(maxForce, 3);
-//         } else if (keysPressed['ArrowDown']) {
-//             vehicle.applyEngineForce(-maxForce / 2, 2);
-//             vehicle.applyEngineForce(-maxForce / 2, 3);
-//         } else {
-//             vehicle.applyEngineForce(0, 2);
-//             vehicle.applyEngineForce(0, 3);
-//         }
-//     }
-
-//     // 处理漂移状态
-//     if (keysPressed[' '] && speed > 10) { // 速度大于10时才能漂移
-//         isDrifting = true;
-//         // 逐渐增加漂移系数
-//         driftFactor = Math.min(driftFactor + DRIFT_INCREASE_RATE, MAX_DRIFT_FACTOR);
-//     } else {
-//         isDrifting = false;
-//         // 漂移系数逐渐恢复
-//         driftFactor = Math.max(driftFactor - DRIFT_DECREASE_RATE, 0);
-//     }
-
-//     // 更新车轮转向
-//     const maxSteerVal = 0.5;
-//     const steerValue = maxSteerVal * (keysPressed['ArrowLeft'] ? 1 : keysPressed['ArrowRight'] ? -1 : 0);
-
-//     // 应用漂移效果
-//     if (isDrifting) {
-//         // 在漂移时增加转向角度
-//         const driftSteerMultiplier = 1.5;
-//         vehicle.setSteeringValue(steerValue * driftSteerMultiplier, 0);
-//         vehicle.setSteeringValue(steerValue * driftSteerMultiplier, 1);
-//     } else {
-//         vehicle.setSteeringValue(steerValue, 0);
-//         vehicle.setSteeringValue(steerValue, 1);
-//     }
-
-//     // 更新车轮驱动力
-//     const maxForce = 1000;
-//     const brakeForce = 1000000;
+// 添加碰撞保护相关函数
+function provideTempCollisionProtection(callback, duration) {
+    // 保存原始碰撞过滤设置
+    const originalGroup = vehicle.chassisBody.collisionFilterGroup;
+    const originalMask = vehicle.chassisBody.collisionFilterMask;
     
-//     // 前进/后退控制
-//     if (keysPressed['ArrowUp']) {
-//         vehicle.applyEngineForce(maxForce, 2);
-//         vehicle.applyEngineForce(maxForce, 3);
-//     } else if (keysPressed['ArrowDown']) {
-//         vehicle.applyEngineForce(-maxForce / 2, 2);
-//         vehicle.applyEngineForce(-maxForce / 2, 3);
-//     } else {
-//         vehicle.applyEngineForce(0, 2);
-//         vehicle.applyEngineForce(0, 3);
-//     }
-
-//     // 漂移时的特殊处理
-//     if (isDrifting) {
-//         // 减小后轮的摩擦力
-//         vehicle.wheelInfos[2].frictionSlip = 0.5 - driftFactor;
-//         vehicle.wheelInfos[3].frictionSlip = 0.5 - driftFactor;
-        
-//         // 保持前轮的高摩擦力
-//         vehicle.wheelInfos[0].frictionSlip = 1;
-//         vehicle.wheelInfos[1].frictionSlip = 1;
-
-//         // 添加侧向力以增强漂移效果
-//         const driftForce = new CANNON.Vec3();
-//         const rightVector = new CANNON.Vec3();
-//         vehicle.chassisBody.vectorToWorldFrame(new CANNON.Vec3(1, 0, 0), rightVector);
-//         rightVector.scale(speed * driftFactor * (steerValue > 0 ? -1 : 1), driftForce);
-//         vehicle.chassisBody.applyImpulse(driftForce, vehicle.chassisBody.position);
-//     } else {
-//         // 恢复正常的轮胎摩擦力
-//         for (let i = 0; i < 4; i++) {
-//             vehicle.wheelInfos[i].frictionSlip = 1;
-//         }
-//     }
-
-//     // 添加视觉效果（可选）
-//     if (isDrifting && speed > 10) {
-//         createDriftParticles();
-//     }
-// }
+    // 修改碰撞过滤设置，使车辆暂时不与其他玩家碰撞，但仍与环境碰撞
+    vehicle.chassisBody.collisionFilterGroup = 4; // 临时组
+    vehicle.chassisBody.collisionFilterMask = 2;  // 只与 Group 2 (环境) 碰撞
+    
+    // 可视化保护状态 (可选)
+    const originalChassisColor = chassisMesh.material.color.clone();
+    chassisMesh.material.color.set(0x00FFFF); // 设置为青色表示受保护
+    
+    console.log(`碰撞保护已启用，持续${duration/1000}秒`);
+    
+    // 设置定时器，在保护期结束后恢复碰撞
+    const protectionTimer = setTimeout(() => {
+        if (currentCollisionProtection) {
+            currentCollisionProtection.cleanup();
+            currentCollisionProtection = null;
+        }
+    }, duration);
+    
+    // 返回清理函数
+    return {
+        cleanup: function() {
+            // 清除定时器
+            clearTimeout(protectionTimer);
+            
+            // 恢复原始碰撞过滤设置
+            vehicle.chassisBody.collisionFilterGroup = originalGroup;
+            vehicle.chassisBody.collisionFilterMask = originalMask;
+            
+            // 恢复原始颜色
+            chassisMesh.material.color.copy(originalChassisColor);
+            
+            console.log("碰撞保护已结束");
+            
+            // 如果提供了回调，则执行
+            if (callback) callback();
+        }
+    };
+}
 
 // 添加漂移粒子效果（可选）
 function createDriftParticles() {
@@ -1443,6 +1509,10 @@ function initSocketEvents() {
         const player = otherPlayers.get(socketId);
         if(player) {
             scene.remove(player.mesh);
+            if(player.body) {
+                world.removeBody(player.body); // 从物理世界中移除碰撞体
+                if(DEBUG) console.log('Removed player body from physics world:', socketId);
+            }
             otherPlayers.delete(socketId);
             if(DEBUG) console.log('Removed player:', socketId);
         }
@@ -1461,28 +1531,51 @@ function initSocketEvents() {
             if(player.id === data.id && player.mesh) {
                 // 安全地更新位置
                 if(data.position) {
-                    player.mesh.position.set(
-                        parseFloat(data.position.x) || 0,
-                        Math.max(parseFloat(data.position.y) || 1, 1), // 确保y至少为1
-                        parseFloat(data.position.z) || 0
-                    );
+                    const position = {
+                        x: parseFloat(data.position.x) || 0,
+                        y: Math.max(parseFloat(data.position.y) || 1, 1), // 确保y至少为1
+                        z: parseFloat(data.position.z) || 0
+                    };
+                    
+                    // 更新视觉模型位置
+                    player.mesh.position.set(position.x, position.y, position.z);
+                    
+                    // 更新物理碰撞体位置
+                    if(player.body) {
+                        player.body.position.set(position.x, position.y, position.z);
+                        player.body.wakeUp(); // 确保物理体处于活动状态
+                    }
                 }
                 
                 // 安全地更新旋转
                 if(data.quaternion) {
+                    let quaternion;
                     if(Array.isArray(data.quaternion)) {
+                        quaternion = {
+                            x: parseFloat(data.quaternion[0]) || 0,
+                            y: parseFloat(data.quaternion[1]) || 0,
+                            z: parseFloat(data.quaternion[2]) || 0,
+                            w: parseFloat(data.quaternion[3]) || 1
+                        };
                         player.mesh.quaternion.set(
-                            parseFloat(data.quaternion[0]) || 0,
-                            parseFloat(data.quaternion[1]) || 0,
-                            parseFloat(data.quaternion[2]) || 0,
-                            parseFloat(data.quaternion[3]) || 1
+                            quaternion.x, quaternion.y, quaternion.z, quaternion.w
                         );
                     } else {
+                        quaternion = {
+                            x: parseFloat(data.quaternion.x) || 0,
+                            y: parseFloat(data.quaternion.y) || 0,
+                            z: parseFloat(data.quaternion.z) || 0,
+                            w: parseFloat(data.quaternion.w) || 1
+                        };
                         player.mesh.quaternion.set(
-                            parseFloat(data.quaternion.x) || 0,
-                            parseFloat(data.quaternion.y) || 0,
-                            parseFloat(data.quaternion.z) || 0,
-                            parseFloat(data.quaternion.w) || 1
+                            quaternion.x, quaternion.y, quaternion.z, quaternion.w
+                        );
+                    }
+                    
+                    // 更新物理碰撞体旋转
+                    if(player.body) {
+                        player.body.quaternion.set(
+                            quaternion.x, quaternion.y, quaternion.z, quaternion.w
                         );
                     }
                 }
@@ -1504,13 +1597,22 @@ window.joinGame = function() {
     playerId = idInput.value.trim();
     
     if(playerId) {
-        if(DEBUG) console.log('Joining game with ID:', playerId);
+        if(DEBUG) console.log('正在加入游戏，ID:', playerId);
         socket.emit('join', playerId);
         document.getElementById('login-screen').style.display = 'none';
         
         // 为当前玩家的车辆添加ID标签
         const label = createPlayerLabel(playerId);
         chassisMesh.add(label);
+        
+        // 清除现有的碰撞保护
+        if (currentCollisionProtection) {
+            currentCollisionProtection.cleanup();
+            currentCollisionProtection = null;
+        }
+        
+        // 初始加入游戏时为玩家提供碰撞保护（5秒）
+        currentCollisionProtection = provideTempCollisionProtection(null, 5000);
     } else {
         document.getElementById('error-message').textContent = '请输入有效的ID';
     }
