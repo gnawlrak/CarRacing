@@ -66,11 +66,11 @@ init();
 animate();
 
 function init() {
-    keysPressed = { 
-        ArrowUp: false, 
-        ArrowDown: false, 
-        ArrowLeft: false, 
-        ArrowRight: false, 
+    keysPressed = {
+        ArrowUp: false,
+        ArrowDown: false,
+        ArrowLeft: false,
+        ArrowRight: false,
         Space: false,
         r: false,
         R: false,
@@ -84,7 +84,7 @@ function init() {
     // 初始化相机，设置视角和位置
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     camera.position.set(0, 5, 10);
-    
+
 
     // 初始化渲染器，设置大小
     renderer = new THREE.WebGLRenderer();
@@ -114,7 +114,7 @@ function init() {
 
     // 创建车体物理体
     const chassisShape = new CANNON.Box(new CANNON.Vec3(2, 0.5, 1));
-    const chassisBody = new CANNON.Body({ 
+    const chassisBody = new CANNON.Body({
         mass: 1000,
         material: new CANNON.Material('vehicle'), // 添加材质以匹配接触材质定义
         collisionFilterGroup: 1,  // 将玩家设置为组1
@@ -125,8 +125,8 @@ function init() {
 
     // 正确的网格尺寸应该与物理体匹配
     chassisMesh = new THREE.Mesh(
-    new THREE.BoxGeometry(2 * 2, 2 * 0.5, 2 * 1),  // 将半尺寸转为全尺寸
-    new THREE.MeshBasicMaterial({ color: 0x00ff00 })
+        new THREE.BoxGeometry(2 * 2, 2 * 0.5, 2 * 1),  // 将半尺寸转为全尺寸
+        new THREE.MeshBasicMaterial({ color: 0x00ff00 })
     );
     scene.add(chassisMesh);
 
@@ -174,7 +174,7 @@ function init() {
     vehicle.wheelInfos.forEach((wheel) => {
         const wheelMesh = new THREE.Mesh(
             // new THREE.CylinderGeometry(wheel.radius, wheel.radius, 0.4, 32),
-            new THREE.SphereGeometry(wheel.radius, 32, 16 ),
+            new THREE.SphereGeometry(wheel.radius, 32, 16),
             new THREE.MeshBasicMaterial({ color: 0x888888 })
         );
         wheelMesh.rotation.x = Math.PI / 2;
@@ -188,12 +188,12 @@ function init() {
 
     // 初始化相机
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    
+
     // 设置初始相机位置和朝向
     const initialCameraOffset = new THREE.Vector3(-5, 2, 0);
     currentCameraPosition = new THREE.Vector3().copy(chassisMesh.position).add(initialCameraOffset);
     currentCameraLookAt = new THREE.Vector3().copy(chassisMesh.position);
-    
+
     camera.position.copy(currentCameraPosition);
     camera.lookAt(currentCameraLookAt);
 
@@ -206,7 +206,7 @@ function init() {
     // 在初始化时预加载玩家出生点周围的区块
     const spawnChunkX = Math.floor(SPAWN_POSITION.x / chunkSize) * chunkSize;
     const spawnChunkZ = Math.floor(SPAWN_POSITION.z / chunkSize) * chunkSize;
-    
+
     // 预加载3x3的区块网格
     for (let x = -1; x <= 1; x++) {
         for (let z = -1; z <= 1; z++) {
@@ -221,7 +221,7 @@ function init() {
 
     // 创建跟随玩家的天空盒
     createFollowingSky();
-    
+
     // 创建云朵
     createClouds();
 
@@ -238,7 +238,7 @@ function createClouds() {
     const cloudCount = 40;
     for (let i = 0; i < cloudCount; i++) {
         const cloudGroup = new THREE.Group();
-        
+
         // 为每朵云创建3-6个部分
         const parts = Math.floor(Math.random() * 4) + 3;
         for (let j = 0; j < parts; j++) {
@@ -254,23 +254,23 @@ function createClouds() {
                 fog: false // 禁用云朵的雾效
             });
             const cloudPart = new THREE.Mesh(geometry, material);
-            
+
             cloudPart.position.set(
                 Math.random() * 10 - 5,
                 Math.random() * 2,
                 Math.random() * 10 - 5
             );
-            
+
             cloudGroup.add(cloudPart);
         }
-        
+
         // 在更大范围内随机放置云朵
         cloudGroup.position.set(
             Math.random() * 1600 - 800,
             Math.random() * 100 + 200,
             Math.random() * 1600 - 800
         );
-        
+
         cloudGroup.userData = {
             speed: Math.random() * 0.1 + 0.05,
             direction: new THREE.Vector3(
@@ -279,7 +279,7 @@ function createClouds() {
                 Math.random() - 0.5
             ).normalize()
         };
-        
+
         sky.add(cloudGroup); // 将云朵添加为天空盒的子对象
     }
 }
@@ -287,9 +287,9 @@ function createClouds() {
 function createTerrainChunk(x, z) {
     // 创建地面
     const groundGeometry = new THREE.PlaneGeometry(chunkSize, chunkSize);
-    const isOutsideCity = (x < WORLD_BOUNDS.min || x > WORLD_BOUNDS.max || 
-                          z < WORLD_BOUNDS.min || z > WORLD_BOUNDS.max);
-    
+    const isOutsideCity = (x < WORLD_BOUNDS.min || x > WORLD_BOUNDS.max ||
+        z < WORLD_BOUNDS.min || z > WORLD_BOUNDS.max);
+
     // 根据是否在城市边界内选择不同的地面材质和生成逻辑
     if (isOutsideCity) {
         // 城市外的自然地形
@@ -297,7 +297,7 @@ function createTerrainChunk(x, z) {
         const groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
         groundMesh.rotation.x = -Math.PI / 2;
         groundMesh.position.set(x, 0, z);
-        
+
         // 添加随机地形起伏
         const vertices = groundMesh.geometry.attributes.position.array;
         for (let i = 0; i < vertices.length; i += 3) {
@@ -310,8 +310,8 @@ function createTerrainChunk(x, z) {
 
         // 添加自然元素（树木、岩石等）
         const naturalElements = [];
-        for (let i = x - chunkSize/2; i < x + chunkSize/2; i += 10) {
-            for (let j = z - chunkSize/2; j < z + chunkSize/2; j += 10) {
+        for (let i = x - chunkSize / 2; i < x + chunkSize / 2; i += 10) {
+            for (let j = z - chunkSize / 2; j < z + chunkSize / 2; j += 10) {
                 if (Math.random() < 0.3) { // 30%的概率生成自然元素
                     const elementType = Math.random() < 0.5 ? 'tree' : 'rock';
                     const element = createNaturalElement(elementType, i, j);
@@ -323,11 +323,11 @@ function createTerrainChunk(x, z) {
         }
 
         // 保存自然地形区块
-        loadedChunks.push({ 
-            x, 
-            z, 
-            mesh: groundMesh, 
-            buildings: naturalElements 
+        loadedChunks.push({
+            x,
+            z,
+            mesh: groundMesh,
+            buildings: naturalElements
         });
 
     } else {
@@ -340,35 +340,35 @@ function createTerrainChunk(x, z) {
 
         // 在区块内创建建筑物
         const buildings = [];
-        for (let i = x - chunkSize/2; i < x + chunkSize/2; i += 20) {
-            for (let j = z - chunkSize/2; j < z + chunkSize/2; j += 15) {
+        for (let i = x - chunkSize / 2; i < x + chunkSize / 2; i += 20) {
+            for (let j = z - chunkSize / 2; j < z + chunkSize / 2; j += 15) {
                 const height = Math.random() * 20 + 10;
 
                 // 创建建筑物网格
                 const buildingGeometry = new THREE.BoxGeometry(5, height, 5);
                 const buildingMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff });
                 const buildingMesh = new THREE.Mesh(buildingGeometry, buildingMaterial);
-                buildingMesh.position.set(i, height/2, j);
+                buildingMesh.position.set(i, height / 2, j);
                 scene.add(buildingMesh);
 
                 // 创建黑色边框
                 const borderMaterial = new THREE.LineBasicMaterial({ color: 0x000000 });
                 const borderGeometry = new THREE.BoxGeometry(5.01, height + 0, 5.01);
                 const borderMesh = new THREE.LineSegments(
-                    new THREE.EdgesGeometry(borderGeometry), 
+                    new THREE.EdgesGeometry(borderGeometry),
                     borderMaterial
                 );
-                borderMesh.position.set(i, height/2, j);
+                borderMesh.position.set(i, height / 2, j);
                 scene.add(borderMesh);
 
                 // 创建建筑物物理体
-                const buildingShape = new CANNON.Box(new CANNON.Vec3(2.5, height/2, 2.5));
+                const buildingShape = new CANNON.Box(new CANNON.Vec3(2.5, height / 2, 2.5));
                 const buildingBody = new CANNON.Body({
                     mass: 0,
                     collisionFilterGroup: 2 // 设置建筑物为 Group 2 (环境)
                 });
                 buildingBody.addShape(buildingShape);
-                buildingBody.position.set(i, height/2, j);
+                buildingBody.position.set(i, height / 2, j);
                 world.addBody(buildingBody);
 
                 buildings.push({
@@ -380,11 +380,11 @@ function createTerrainChunk(x, z) {
         }
 
         // 保存城市区块
-        loadedChunks.push({ 
-            x, 
-            z, 
-            mesh: groundMesh, 
-            buildings: buildings 
+        loadedChunks.push({
+            x,
+            z,
+            mesh: groundMesh,
+            buildings: buildings
         });
     }
 }
@@ -392,33 +392,33 @@ function createTerrainChunk(x, z) {
 // 添加创建自然元素的辅助函数
 function createNaturalElement(type, x, z) {
     let mesh, body;
-    
+
     if (type === 'tree') {
         // 创建树干
         const trunkGeometry = new THREE.CylinderGeometry(0.3, 0.5, 2, 8);
         const trunkMaterial = new THREE.MeshBasicMaterial({ color: 0x4b3621 });
         const trunkMesh = new THREE.Mesh(trunkGeometry, trunkMaterial);
-        
+
         // 创建树冠
         const leavesGeometry = new THREE.ConeGeometry(2, 4, 8);
         const leavesMaterial = new THREE.MeshBasicMaterial({ color: 0x228B22 });
         const leavesMesh = new THREE.Mesh(leavesGeometry, leavesMaterial);
         leavesMesh.position.y = 3;
-        
+
         // 组合树干和树冠
         mesh = new THREE.Group();
         mesh.add(trunkMesh);
         mesh.add(leavesMesh);
         mesh.position.set(x, 1, z);
         scene.add(mesh);
-        
+
         // 创建简单的物理碰撞体
         const treeShape = new CANNON.Cylinder(0.5, 0.5, 2, 8);
         body = new CANNON.Body({ mass: 0 });
         body.addShape(treeShape);
         body.position.set(x, 1, z);
         world.addBody(body);
-        
+
     } else if (type === 'rock') {
         // 创建岩石
         const rockGeometry = new THREE.DodecahedronGeometry(Math.random() * 1 + 0.5);
@@ -426,7 +426,7 @@ function createNaturalElement(type, x, z) {
         mesh = new THREE.Mesh(rockGeometry, rockMaterial);
         mesh.position.set(x, 0.5, z);
         scene.add(mesh);
-        
+
         // 创建岩石的物理碰撞体
         const rockShape = new CANNON.Sphere(0.75);
         body = new CANNON.Body({ mass: 0 });
@@ -434,7 +434,7 @@ function createNaturalElement(type, x, z) {
         body.position.set(x, 0.5, z);
         world.addBody(body);
     }
-    
+
     return { mesh, body };
 }
 
@@ -461,9 +461,9 @@ function onKeyDown(event) {
 function onKeyUp(event) {
     // 松开键时设置对应键值为false
     keysPressed[event.key] = false;
-    
+
     // 当松开前进或后退键时，检查是否需要切换到N档
-    if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && 
+    if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') &&
         !keysPressed['ArrowUp'] && !keysPressed['ArrowDown']) {
         lastDriveState = 'N';
     }
@@ -521,7 +521,7 @@ function animate() {
     updateDayNightCycle();
 
     // 发送位置更新
-    if(socket && chassisMesh) {
+    if (socket && chassisMesh) {
         socket.emit('update_position', {
             position: chassisMesh.position,
             quaternion: chassisMesh.quaternion
@@ -545,18 +545,18 @@ function updatePhysics() {
         // 检查所有物理体，清理远离任何玩家但又在世界中的碰撞体
         const maxDistanceFromAnyPlayer = 100; // 超过此距离的物理体将被清理
         const bodies = world.bodies.slice();
-        
+
         bodies.forEach(body => {
             // 跳过地面和建筑物等固定物体
             if (body.mass === 0) {
                 return;
             }
-            
+
             // 跳过玩家车辆
             if (body === vehicle.chassisBody) {
                 return;
             }
-            
+
             // 检查是否是其他玩家的车辆
             let isOtherPlayerBody = false;
             for (const player of otherPlayers.values()) {
@@ -565,18 +565,18 @@ function updatePhysics() {
                     break;
                 }
             }
-            
+
             // 如果是其他玩家的车辆，确保它仍在世界的合理范围内
             if (isOtherPlayerBody) {
                 // 判断此物体是否远离所有玩家
                 let nearAnyPlayer = false;
-                
+
                 // 检查与本地玩家的距离
                 const dxLocal = body.position.x - vehicle.chassisBody.position.x;
                 const dyLocal = body.position.y - vehicle.chassisBody.position.y;
                 const dzLocal = body.position.z - vehicle.chassisBody.position.z;
-                const distanceToLocalPlayer = Math.sqrt(dxLocal*dxLocal + dyLocal*dyLocal + dzLocal*dzLocal);
-                
+                const distanceToLocalPlayer = Math.sqrt(dxLocal * dxLocal + dyLocal * dyLocal + dzLocal * dzLocal);
+
                 if (distanceToLocalPlayer < maxDistanceFromAnyPlayer) {
                     nearAnyPlayer = true;
                 } else {
@@ -586,8 +586,8 @@ function updatePhysics() {
                             const dx = body.position.x - player.body.position.x;
                             const dy = body.position.y - player.body.position.y;
                             const dz = body.position.z - player.body.position.z;
-                            const distance = Math.sqrt(dx*dx + dy*dy + dz*dz);
-                            
+                            const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
                             if (distance < maxDistanceFromAnyPlayer) {
                                 nearAnyPlayer = true;
                                 break;
@@ -595,10 +595,10 @@ function updatePhysics() {
                         }
                     }
                 }
-                
+
                 // 如果远离所有玩家，可能是残留的碰撞体，将其移除
                 if (!nearAnyPlayer) {
-                    if(DEBUG) console.log('Found orphaned collision body far from all players, removing it');
+                    if (DEBUG) console.log('Found orphaned collision body far from all players, removing it');
                     // 尝试找到对应的玩家并在socketId中注销
                     for (const [socketId, player] of otherPlayers.entries()) {
                         if (player.body === body) {
@@ -687,7 +687,7 @@ function updatePhysics() {
         vehicle.setSteeringValue(0, 2);
         vehicle.setSteeringValue(0, 3);
     }
-    
+
     // 更新物理世界
     const timeStep = 1 / 120; // 将时间步长从1/60秒改为1/120秒
     world.step(timeStep);
@@ -717,39 +717,39 @@ function updatePhysics() {
     });
 
 
-// 检查是否处于第一人称视角并更新相机
-if (!isFirstPersonView) {
-    // 如果是第三人称视角
-    let cameraOffset = new THREE.Vector3().copy(originalCameraOffset);
+    // 检查是否处于第一人称视角并更新相机
+    if (!isFirstPersonView) {
+        // 如果是第三人称视角
+        let cameraOffset = new THREE.Vector3().copy(originalCameraOffset);
 
-    // 计算相机目标位置
-    const targetCameraPosition = new THREE.Vector3();
-    targetCameraPosition.copy(chassisMesh.position).add(cameraOffset.applyQuaternion(chassisMesh.quaternion));
+        // 计算相机目标位置
+        const targetCameraPosition = new THREE.Vector3();
+        targetCameraPosition.copy(chassisMesh.position).add(cameraOffset.applyQuaternion(chassisMesh.quaternion));
 
-    // 平滑相机移动
-    currentCameraPosition.lerp(targetCameraPosition, 0.1);
-    camera.position.copy(currentCameraPosition);
+        // 平滑相机移动
+        currentCameraPosition.lerp(targetCameraPosition, 0.1);
+        camera.position.copy(currentCameraPosition);
 
-    // **新相机朝向车辆右方**
-    const rightOffset = new THREE.Vector3(1, 0, 0); // 车辆的右侧方向
-    rightOffset.applyQuaternion(chassisMesh.quaternion); // 将右侧方向转化为车辆当前朝向的局部坐标系
-    const targetLookAt = new THREE.Vector3().copy(chassisMesh.position).add(rightOffset);
-    
-    currentCameraLookAt.lerp(targetLookAt, 0.1);
-    camera.lookAt(currentCameraLookAt);
-} else {
-    // 如果是第一人称视角
-    const firstPersonOffset = new THREE.Vector3(0, 0.8, 0); // 相机相对于车体的位置
-    currentCameraPosition.copy(chassisMesh.position).add(firstPersonOffset);
-    
-    // **更新相机朝向车辆右方**
-    const rightOffset = new THREE.Vector3(1, 0, 0); // 车辆的右侧方向
-    rightOffset.applyQuaternion(chassisMesh.quaternion); // 右侧方向转为车辆当前朝的局部坐标系
-    currentCameraLookAt.copy(chassisMesh.position).add(rightOffset); // 相机朝向右侧
-    
-    camera.position.copy(currentCameraPosition);
-    camera.lookAt(currentCameraLookAt);
-}
+        // **新相机朝向车辆右方**
+        const rightOffset = new THREE.Vector3(1, 0, 0); // 车辆的右侧方向
+        rightOffset.applyQuaternion(chassisMesh.quaternion); // 将右侧方向转化为车辆当前朝向的局部坐标系
+        const targetLookAt = new THREE.Vector3().copy(chassisMesh.position).add(rightOffset);
+
+        currentCameraLookAt.lerp(targetLookAt, 0.1);
+        camera.lookAt(currentCameraLookAt);
+    } else {
+        // 如果是第一人称视角
+        const firstPersonOffset = new THREE.Vector3(0, 0.8, 0); // 相机相对于车体的位置
+        currentCameraPosition.copy(chassisMesh.position).add(firstPersonOffset);
+
+        // **更新相机朝向车辆右方**
+        const rightOffset = new THREE.Vector3(1, 0, 0); // 车辆的右侧方向
+        rightOffset.applyQuaternion(chassisMesh.quaternion); // 右侧方向转为车辆当前朝的局部坐标系
+        currentCameraLookAt.copy(chassisMesh.position).add(rightOffset); // 相机朝向右侧
+
+        camera.position.copy(currentCameraPosition);
+        camera.lookAt(currentCameraLookAt);
+    }
     // 检查视角并更新相机位置和朝向
     if (!isFirstPersonView) {
         let cameraOffset = new THREE.Vector3().copy(originalCameraOffset);
@@ -825,13 +825,13 @@ function updateTerrain() {
     // 修改移除超出视距的地形块的逻辑
     loadedChunks = loadedChunks.filter(chunk => {
         const distance = Math.sqrt(
-            Math.pow(chunk.x - vehiclePosition.x, 2) + 
+            Math.pow(chunk.x - vehiclePosition.x, 2) +
             Math.pow(chunk.z - vehiclePosition.z, 2)
         );
         if (distance > chunkSize * 2) { // 增加保留距离
             // 移除地面
             scene.remove(chunk.mesh);
-            
+
             // 移除所有建筑物、边框和自然元素
             chunk.buildings.forEach(building => {
                 // 移除建筑物
@@ -845,7 +845,7 @@ function updateTerrain() {
                     world.removeBody(building.body);
                 }
             });
-            
+
             return false;
         }
         return true;
@@ -887,14 +887,14 @@ function updateCameraPosition() {
 function resetVehicle() {
     // 重置位置
     vehicle.chassisBody.position.set(SPAWN_POSITION.x, SPAWN_POSITION.y, SPAWN_POSITION.z);
-    
+
     // 重置速度
     vehicle.chassisBody.velocity.setZero();
     vehicle.chassisBody.angularVelocity.setZero();
-    
+
     // 重置方向（使用四元数设置为默认朝向）
     vehicle.chassisBody.quaternion.set(0, 0, 0, 1);
-    
+
     // 重置所有车轮
     for (let i = 0; i < vehicle.wheelInfos.length; i++) {
         vehicle.wheelInfos[i].suspensionLength = 0;
@@ -902,16 +902,16 @@ function resetVehicle() {
         vehicle.wheelInfos[i].suspensionRelativeVelocity = 0;
         vehicle.wheelInfos[i].deltaRotation = 0;
     }
-    
+
     // 更新车辆的物理状态
     vehicle.chassisBody.wakeUp();
-    
+
     // 清除现有的碰撞保护
     if (currentCollisionProtection) {
         currentCollisionProtection.cleanup();
         currentCollisionProtection = null;
     }
-    
+
     // 重生时提供3秒临时碰撞保护
     currentCollisionProtection = provideTempCollisionProtection(null, 3000);
 }
@@ -920,29 +920,29 @@ function resetVehicle() {
 function straightenVehicle() {
     // 获取当前位置
     const currentPosition = vehicle.chassisBody.position.clone();
-    
+
     // 保持当前y轴旋转朝向），但重置其他轴的旋转
     const currentRotation = new CANNON.Quaternion();
     vehicle.chassisBody.quaternion.copy(currentRotation);
-    
+
     // 获取当前y轴旋转角度
     const euler = new CANNON.Vec3();
     vehicle.chassisBody.quaternion.toEuler(euler);
-    
+
     // 创建新的四元数，只保留y轴旋转
     const newQuaternion = new CANNON.Quaternion();
     newQuaternion.setFromEuler(0, euler.y, 0);
-    
+
     // 应用新的旋转
     vehicle.chassisBody.quaternion.copy(newQuaternion);
-    
+
     // 稍微抬升车辆以防止卡在地面
     vehicle.chassisBody.position.y = Math.max(currentPosition.y, SPAWN_POSITION.y);
-    
+
     // 重置速度
     vehicle.chassisBody.velocity.setZero();
     vehicle.chassisBody.angularVelocity.setZero();
-    
+
     // 重置车轮状态
     for (let i = 0; i < vehicle.wheelInfos.length; i++) {
         vehicle.wheelInfos[i].suspensionLength = 0;
@@ -950,7 +950,7 @@ function straightenVehicle() {
         vehicle.wheelInfos[i].suspensionRelativeVelocity = 0;
         vehicle.wheelInfos[i].deltaRotation = 0;
     }
-    
+
     // 唤醒物理体
     vehicle.chassisBody.wakeUp();
 
@@ -969,17 +969,17 @@ function provideTempCollisionProtection(callback, duration) {
     // 保存原始碰撞过滤设置
     const originalGroup = vehicle.chassisBody.collisionFilterGroup;
     const originalMask = vehicle.chassisBody.collisionFilterMask;
-    
+
     // 修改碰撞过滤设置，使车辆暂时不与其他玩家碰撞，但仍与环境碰撞
     vehicle.chassisBody.collisionFilterGroup = 4; // 临时组
     vehicle.chassisBody.collisionFilterMask = 2;  // 只与 Group 2 (环境) 碰撞
-    
+
     // 可视化保护状态 (可选)
     const originalChassisColor = chassisMesh.material.color.clone();
     chassisMesh.material.color.set(0x00FFFF); // 设置为青色表示受保护
-    
-    console.log(`碰撞保护已启用，持续${duration/1000}秒`);
-    
+
+    console.log(`碰撞保护已启用，持续${duration / 1000}秒`);
+
     // 设置定时器，在保护期结束后恢复碰撞
     const protectionTimer = setTimeout(() => {
         if (currentCollisionProtection) {
@@ -987,22 +987,22 @@ function provideTempCollisionProtection(callback, duration) {
             currentCollisionProtection = null;
         }
     }, duration);
-    
+
     // 返回清理函数
     return {
-        cleanup: function() {
+        cleanup: function () {
             // 清除定时器
             clearTimeout(protectionTimer);
-            
+
             // 恢复原始碰撞过滤设置
             vehicle.chassisBody.collisionFilterGroup = originalGroup;
             vehicle.chassisBody.collisionFilterMask = originalMask;
-            
+
             // 恢复原始颜色
             chassisMesh.material.color.copy(originalChassisColor);
-            
+
             console.log("碰撞保护已结束");
-            
+
             // 如果提供了回调，则执行
             if (callback) callback();
         }
@@ -1019,13 +1019,13 @@ function createDriftParticles() {
 
     wheelPositions.forEach(pos => {
         const particleGeometry = new THREE.SphereGeometry(0.1);
-        const particleMaterial = new THREE.MeshBasicMaterial({ 
+        const particleMaterial = new THREE.MeshBasicMaterial({
             color: 0x333333,
             transparent: true,
             opacity: 0.5
         });
         const particle = new THREE.Mesh(particleGeometry, particleMaterial);
-        
+
         particle.position.set(pos.x, 0.1, pos.z);
         scene.add(particle);
 
@@ -1114,7 +1114,7 @@ function createSpeedometer() {
         border-radius: 50%;
     `;
 
-    
+
     speedometer.appendChild(speedIndicator);
     speedometer.appendChild(gearDisplay);
     speedometer.appendChild(speedValue);
@@ -1128,14 +1128,14 @@ function updateSpeedometer() {
     const velocity = vehicle.chassisBody.velocity;
     const speed = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
     const speedKmh = Math.round(speed * 3.6);
-    
+
     const speedValue = document.getElementById('speed-value');
     const speedIndicator = document.getElementById('speed-indicator');
     const gearDisplay = document.getElementById('gear-display');
-    
+
     // 更新速度显示
     speedValue.textContent = speedKmh;
-    
+
 
     // 改进的挡位判断逻辑
     if (speed < 0.5) {
@@ -1153,10 +1153,10 @@ function updateSpeedometer() {
             lastDriveState = 'R';
         }
         // 没有按键时保持上一个状态
-        
+
         // 显示当前挡位
         gearDisplay.textContent = lastDriveState;
-        switch(lastDriveState) {
+        switch (lastDriveState) {
             case 'D':
                 gearDisplay.style.color = '#44ff44';
                 break;
@@ -1178,14 +1178,14 @@ function updateClouds() {
             child.position.add(
                 child.userData.direction.clone().multiplyScalar(child.userData.speed)
             );
-            
+
             // 如果云朵移出范围，将其传送到对面
             const limit = 500;
             if (child.position.x > limit) child.position.x = -limit;
             if (child.position.x < -limit) child.position.x = limit;
             if (child.position.z > limit) child.position.z = -limit;
             if (child.position.z < -limit) child.position.z = limit;
-            
+
             // 让云朵轻上下浮动
             child.position.y += Math.sin(Date.now() * 0.001) * 0.05;
         }
@@ -1197,31 +1197,31 @@ function updateSky() {
     if (sky && vehicle) {
         const vehiclePos = vehicle.chassisBody.position;
         sky.position.set(vehiclePos.x, 0, vehiclePos.z);
-        
+
         if (dayNightCycle) {
             const time = Date.now() * 0.000001; // 控制昼夜循环速度
             const dayMix = (Math.sin(time) + 1) * 0.5;
-            
+
             // 更新天空颜色
             const uniforms = sky.material.uniforms;
             const dayTopColor = new THREE.Color(0x0077ff);
             const dayBottomColor = new THREE.Color(0x87ceeb);
             const nightTopColor = new THREE.Color(0x000033);
             const nightBottomColor = new THREE.Color(0x000066);
-            
+
             uniforms.topColor.value.lerpColors(nightTopColor, dayTopColor, dayMix);
             uniforms.bottomColor.value.lerpColors(nightBottomColor, dayBottomColor, dayMix);
-            
+
             // 更新太阳和月亮位置
             const radius = 800;
             const height = Math.sin(time) * radius;
             const depth = Math.cos(time) * radius;
-            
+
             // 太阳位置和亮度
             sun.position.set(0, height, -depth);
             sun.material.color.setRGB(1, dayMix * 0.5 + 0.5, dayMix * 0.3 + 0.7);
             sun.children[0].material.opacity = dayMix; // 调整光晕
-            
+
             // 月亮位置和亮度（与太阳相反）
             moon.position.set(0, -height, depth);
             moon.material.color.setRGB(
@@ -1230,14 +1230,14 @@ function updateSky() {
                 0.7 + (1 - dayMix) * 0.3
             );
             moon.children[0].material.opacity = 1 - dayMix; // 调整光晕
-            
+
             // 更新环境光
             const ambientLight = scene.children.find(child => child instanceof THREE.AmbientLight);
             if (ambientLight) {
                 ambientLight.intensity = 0.2 + dayMix * 0.8;
             }
         }
-        
+
         // 更新云朵
         updateClouds();
     }
@@ -1249,23 +1249,23 @@ function updateDayNightCycle() {
         const time = Date.now() * 0.000001; // 控制昼夜循环速度
         const topColor = sky.material.uniforms.topColor.value;
         const bottomColor = sky.material.uniforms.bottomColor.value;
-        
+
         // 根据时间更新天空颜色
         const dayTop = new THREE.Color(0x0077ff);
         const dayBottom = new THREE.Color(0x87ceeb);
         const nightTop = new THREE.Color(0x000033);
         const nightBottom = new THREE.Color(0x000066);
-        
+
         const dayMix = (Math.sin(time) + 1) * 0.5;
         topColor.lerpColors(nightTop, dayTop, dayMix);
         bottomColor.lerpColors(nightBottom, dayBottom, dayMix);
-        
+
         // 更新太阳/月亮位置
         if (sky.children[0]) {
             const celestialBody = sky.children[0];
             celestialBody.position.y = Math.sin(time) * 800;
             celestialBody.position.z = Math.cos(time) * 800;
-            
+
             // 根据时间更改发光体颜色（太阳/月亮）
             const sunColor = new THREE.Color(0xffffaa);
             const moonColor = new THREE.Color(0x888888);
@@ -1278,7 +1278,7 @@ function updateDayNightCycle() {
 function createFollowingSky() {
     // 创建天空球体
     const skyGeometry = new THREE.SphereGeometry(1000, 32, 32);
-    
+
     // 创建渐变材质
     const skyMaterial = new THREE.ShaderMaterial({
         uniforms: {
@@ -1320,7 +1320,7 @@ function createFollowingSky() {
         fog: false
     });
     sun = new THREE.Mesh(sunGeometry, sunMaterial);
-    
+
     // 添加太阳光晕
     const sunGlowGeometry = new THREE.SphereGeometry(60, 32, 32);
     const sunGlowMaterial = new THREE.ShaderMaterial({
@@ -1359,7 +1359,7 @@ function createFollowingSky() {
         fog: false
     });
     moon = new THREE.Mesh(moonGeometry, moonMaterial);
-    
+
     // 添加月亮光晕
     const moonGlowGeometry = new THREE.SphereGeometry(45, 32, 32);
     const moonGlowMaterial = new THREE.ShaderMaterial({
@@ -1390,7 +1390,7 @@ function createFollowingSky() {
     const moonGlow = new THREE.Mesh(moonGlowGeometry, moonGlowMaterial);
     moon.add(moonGlow);
     sky.add(moon);
-} 
+}
 
 // 添加3D文本显示玩家ID的函数
 function createPlayerLabel(id) {
@@ -1398,73 +1398,73 @@ function createPlayerLabel(id) {
     const context = canvas.getContext('2d');
     canvas.width = 256;
     canvas.height = 64;
-    
+
     context.fillStyle = '#ffffff';
     context.font = '32px Arial';
     context.textAlign = 'center';
     context.fillText(id, 128, 40);
-    
+
     const texture = new THREE.CanvasTexture(canvas);
     const material = new THREE.SpriteMaterial({ map: texture });
     const sprite = new THREE.Sprite(material);
     sprite.scale.set(2, 0.5, 1);
     sprite.position.y = 2; // 位于车顶上方
-    
+
     return sprite;
 }
 
 // 修改初始化其他玩家的函数
 function initOtherPlayer(playerData) {
-    if(DEBUG) console.log('Initializing other player:', playerData);
-    
+    if (DEBUG) console.log('Initializing other player:', playerData);
+
     // 检查玩家是否已存在，使用socketId检查
-    if(Array.from(otherPlayers.values()).some(p => p.socketId === playerData.socketId)) {
-        if(DEBUG) console.log('Player already exists:', playerData.socketId);
+    if (Array.from(otherPlayers.values()).some(p => p.socketId === playerData.socketId)) {
+        if (DEBUG) console.log('Player already exists:', playerData.socketId);
         return;
     }
 
     // 创建其他玩家的车辆模型
     const otherChassisGeometry = new THREE.BoxGeometry(4, 1, 2);
-    const otherChassisMaterial = new THREE.MeshBasicMaterial({ 
+    const otherChassisMaterial = new THREE.MeshBasicMaterial({
         color: 0xff0000,
         transparent: false,
         opacity: 1
     });
     const otherChassisMesh = new THREE.Mesh(otherChassisGeometry, otherChassisMaterial);
-    
+
     // 设置初始位置
-    if(playerData.position) {
+    if (playerData.position) {
         otherChassisMesh.position.copy(playerData.position);
     }
-    if(playerData.quaternion) {
+    if (playerData.quaternion) {
         otherChassisMesh.quaternion.copy(playerData.quaternion);
     }
-    
+
     // 创建ID标签
     const label = createPlayerLabel(playerData.id);
     otherChassisMesh.add(label);
-    
+
     scene.add(otherChassisMesh);
-    
+
     // 创建物理碰撞体
     const otherChassisShape = new CANNON.Box(new CANNON.Vec3(2, 0.5, 1)); // 与视觉模型大小匹配
-    const otherChassisBody = new CANNON.Body({ 
+    const otherChassisBody = new CANNON.Body({
         mass: 1000,  // 与玩家车辆相同的质量
         material: new CANNON.Material('otherVehicle')
     });
     otherChassisBody.addShape(otherChassisShape);
-    
+
     // 设置物理体的初始位置和旋转
-    if(playerData.position) {
+    if (playerData.position) {
         otherChassisBody.position.copy(playerData.position);
     }
-    if(playerData.quaternion) {
+    if (playerData.quaternion) {
         otherChassisBody.quaternion.copy(playerData.quaternion);
     }
-    
+
     // 添加到物理世界
     world.addBody(otherChassisBody);
-    
+
     // 使用socketId作为Map的key
     otherPlayers.set(playerData.socketId, {
         mesh: otherChassisMesh,
@@ -1474,8 +1474,8 @@ function initOtherPlayer(playerData) {
         socketId: playerData.socketId
     });
 
-    if(DEBUG) console.log('Other player initialized:', playerData.id);
-    if(DEBUG) console.log('Current other players:', otherPlayers);
+    if (DEBUG) console.log('Other player initialized:', playerData.id);
+    if (DEBUG) console.log('Current other players:', otherPlayers);
 }
 
 // 修改socket事件处理
@@ -1485,72 +1485,72 @@ function initSocketEvents() {
     });
 
     socket.on('connect', () => {
-        if(DEBUG) console.log('Connected to server');
+        if (DEBUG) console.log('Connected to server');
     });
-    
+
     socket.on('players', players => {
-        if(DEBUG) console.log('Received players list:', players);
+        if (DEBUG) console.log('Received players list:', players);
         players.forEach(player => {
-            if(player.id !== playerId) {
+            if (player.id !== playerId) {
                 initOtherPlayer(player);
             }
         });
     });
-    
+
     socket.on('player_joined', data => {
-        if(DEBUG) console.log('Player joined:', data);
-        if(data.id !== playerId) {
+        if (DEBUG) console.log('Player joined:', data);
+        if (data.id !== playerId) {
             initOtherPlayer(data);
         }
     });
-    
+
     socket.on('player_left', socketId => {
-        if(DEBUG) console.log('Player left:', socketId);
+        if (DEBUG) console.log('Player left:', socketId);
         const player = otherPlayers.get(socketId);
-        if(player) {
+        if (player) {
             scene.remove(player.mesh);
-            if(player.body) {
+            if (player.body) {
                 world.removeBody(player.body); // 从物理世界中移除碰撞体
-                if(DEBUG) console.log('Removed player body from physics world:', socketId);
+                if (DEBUG) console.log('Removed player body from physics world:', socketId);
             }
             otherPlayers.delete(socketId);
-            if(DEBUG) console.log('Removed player:', socketId);
+            if (DEBUG) console.log('Removed player:', socketId);
         }
     });
-    
+
     socket.on('player_moved', data => {
-        if(DEBUG) console.log('Player moved:', data);
-        
+        if (DEBUG) console.log('Player moved:', data);
+
         // 防止更新自己的位置
-        if(data.id === playerId) {
+        if (data.id === playerId) {
             return;
         }
-        
+
         // 遍历所有玩家查找匹配的ID
         otherPlayers.forEach((player, socketId) => {
-            if(player.id === data.id && player.mesh) {
+            if (player.id === data.id && player.mesh) {
                 // 安全地更新位置
-                if(data.position) {
+                if (data.position) {
                     const position = {
                         x: parseFloat(data.position.x) || 0,
                         y: Math.max(parseFloat(data.position.y) || 1, 1), // 确保y至少为1
                         z: parseFloat(data.position.z) || 0
                     };
-                    
+
                     // 更新视觉模型位置
                     player.mesh.position.set(position.x, position.y, position.z);
-                    
+
                     // 更新物理碰撞体位置
-                    if(player.body) {
+                    if (player.body) {
                         player.body.position.set(position.x, position.y, position.z);
                         player.body.wakeUp(); // 确保物理体处于活动状态
                     }
                 }
-                
+
                 // 安全地更新旋转
-                if(data.quaternion) {
+                if (data.quaternion) {
                     let quaternion;
-                    if(Array.isArray(data.quaternion)) {
+                    if (Array.isArray(data.quaternion)) {
                         quaternion = {
                             x: parseFloat(data.quaternion[0]) || 0,
                             y: parseFloat(data.quaternion[1]) || 0,
@@ -1571,46 +1571,46 @@ function initSocketEvents() {
                             quaternion.x, quaternion.y, quaternion.z, quaternion.w
                         );
                     }
-                    
+
                     // 更新物理碰撞体旋转
-                    if(player.body) {
+                    if (player.body) {
                         player.body.quaternion.set(
                             quaternion.x, quaternion.y, quaternion.z, quaternion.w
                         );
                     }
                 }
-                
+
                 // 确保可见性
                 player.mesh.visible = true;
             }
         });
     });
-    
+
     socket.on('join_failed', message => {
         document.getElementById('error-message').textContent = message;
     });
 }
 
 // 修改joinGame函数
-window.joinGame = function() {
+window.joinGame = function () {
     const idInput = document.getElementById('player-id');
     playerId = idInput.value.trim();
-    
-    if(playerId) {
-        if(DEBUG) console.log('正在加入游戏，ID:', playerId);
+
+    if (playerId) {
+        if (DEBUG) console.log('正在加入游戏，ID:', playerId);
         socket.emit('join', playerId);
         document.getElementById('login-screen').style.display = 'none';
-        
+
         // 为当前玩家的车辆添加ID标签
         const label = createPlayerLabel(playerId);
         chassisMesh.add(label);
-        
+
         // 清除现有的碰撞保护
         if (currentCollisionProtection) {
             currentCollisionProtection.cleanup();
             currentCollisionProtection = null;
         }
-        
+
         // 初始加入游戏时为玩家提供碰撞保护（5秒）
         currentCollisionProtection = provideTempCollisionProtection(null, 5000);
     } else {
