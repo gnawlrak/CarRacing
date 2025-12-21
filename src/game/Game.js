@@ -6,6 +6,7 @@ import { UIManager } from './UIManager.js';
 import { NetworkManager } from './NetworkManager.js';
 import { Environment } from './Environment.js';
 import { Vehicle } from './Vehicle.js';
+import { FixedWing } from './FixedWing.js';
 import { FlightManager } from './FlightManager.js';
 import { CONSTANTS } from '../utils/Constants.js';
 
@@ -58,6 +59,8 @@ export class Game {
 
         this.environment.init();
         this.uiManager.createSpeedometer();
+        this.uiManager.createFlightHUD(this);
+        this.uiManager.createSettingsMenu((type) => this.switchVehicle(type));
         this.networkManager.init();
 
         // Bind Input Actions
@@ -226,6 +229,37 @@ export class Game {
         this.physicsWorld.step();
     }
 
+    switchVehicle(type) {
+        // Remove current vehicle
+        if (this.vehicle) {
+            this.scene.remove(this.vehicle.chassisMesh);
+            if (this.vehicle.wheelMeshes) {
+                this.vehicle.wheelMeshes.forEach(w => this.scene.remove(w));
+            }
+            if (this.vehicle.chassisBody) {
+                this.physicsWorld.world.removeBody(this.vehicle.chassisBody);
+            }
+            // If it's a RaycastVehicle, remove it too
+            if (this.vehicle.vehicle && this.vehicle.vehicle.removeFromWorld) {
+                this.vehicle.vehicle.removeFromWorld(this.physicsWorld.world);
+            }
+        }
+
+        // Create new
+        if (type === 'fixedwing') {
+            this.vehicle = new FixedWing(this);
+            this.flightMode = true; // Auto flight mode for aircraft
+        } else {
+            this.vehicle = new Vehicle(this);
+            this.flightMode = false;
+        }
+
+        this.vehicle.init();
+
+        // Re-attach player label if needed? (optional for now)
+        // this.createPlayerLabelForSelf(this.networkManager.id);
+    }
+
     updateCamera() {
         const chassisMesh = this.vehicle.chassisMesh;
         if (!chassisMesh) return;
@@ -257,7 +291,7 @@ export class Game {
             this.camera.lookAt(this.currentCameraLookAt);
         } else {
             // First Person
-            const offset = CONSTANTS.CAMERA.FIRST_PERSON_OFFSET.clone();
+            const offset = (this.vehicle.cameraOffset || CONSTANTS.CAMERA.FIRST_PERSON_OFFSET).clone();
             offset.applyQuaternion(chassisMesh.quaternion);
             this.currentCameraPosition.copy(chassisMesh.position).add(offset);
             this.camera.position.copy(this.currentCameraPosition);

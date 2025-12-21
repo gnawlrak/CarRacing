@@ -14,6 +14,20 @@ export class InputManager {
             C: false,
             f: false, // Flight toggle
             F: false,
+            w: false,
+            W: false,
+            a: false,
+            A: false,
+            s: false,
+            S: false,
+            d: false,
+            D: false,
+            g: false,
+            G: false,
+            h: false,
+            H: false,
+            b: false,
+            B: false,
             ShiftLeft: false,
             ShiftRight: false
         };
