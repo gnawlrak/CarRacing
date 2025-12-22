@@ -14,7 +14,8 @@ export class FixedWing {
         this.gearDown = true;
         this.airbrakeActive = false;
         this.braking = false;
-        this.gearMeshes = [];
+        this.vehicle = null; // RaycastVehicle
+        this.wheelMeshes = [];
         this.airbrakeMeshes = [];
     }
 
@@ -86,38 +87,58 @@ export class FixedWing {
         this.flameMesh.visible = false;
         this.chassisMesh.add(this.flameMesh);
 
-        // --- Landing Gear Visuals ---
-        const gearMat = new THREE.MeshPhongMaterial({ color: 0x333333 });
-        const wheelGeom = new THREE.CylinderGeometry(0.3 * scale, 0.3 * scale, 0.2 * scale, 16);
-        const strutGeom = new THREE.BoxGeometry(0.1 * scale, 0.8 * scale, 0.1 * scale);
+        // --- Physical Landing Gear (RaycastVehicle) ---
+        this.vehicle = new CANNON.RaycastVehicle({
+            chassisBody: this.chassisBody,
+        });
 
-        const createGear = (x, y, z) => {
-            const gearGroup = new THREE.Group();
-
-            const strut = new THREE.Mesh(strutGeom, gearMat);
-            strut.position.set(0, -0.4 * scale, 0); // Strut extends down from pivot
-            gearGroup.add(strut);
-
-            const wheel = new THREE.Mesh(wheelGeom, gearMat);
-            wheel.rotation.z = Math.PI / 2;
-            wheel.position.set(0, -0.8 * scale, 0);
-            gearGroup.add(wheel);
-
-            gearGroup.position.set(x, y, z);
-            return gearGroup;
+        const wheelOptions = {
+            radius: CONSTANTS.AERO.GEAR.WHEEL_RADIUS * scale, // Scaled radius
+            directionLocal: new CANNON.Vec3(0, -1, 0),
+            suspensionStiffness: CONSTANTS.AERO.GEAR.SUSPENSION_STIFFNESS,
+            suspensionRestLength: CONSTANTS.AERO.GEAR.SUSPENSION_REST_LENGTH * scale,
+            frictionSlip: CONSTANTS.AERO.GEAR.FRICTION_SLIP,
+            dampingRelaxation: CONSTANTS.AERO.GEAR.DAMPING_RELAXATION,
+            dampingCompression: CONSTANTS.AERO.GEAR.DAMPING_COMPRESSION,
+            maxSuspensionForce: CONSTANTS.AERO.GEAR.MAX_SUSPENSION_FORCE,
+            rollInfluence: CONSTANTS.AERO.GEAR.ROLL_INFLUENCE,
+            axleLocal: new CANNON.Vec3(0, 0, 1),
+            chassisConnectionPointLocal: new CANNON.Vec3(0, 0, 0),
+            maxSuspensionTravel: CONSTANTS.AERO.GEAR.MAX_SUSPENSION_TRAVEL * scale,
+            customSlidingRotationalSpeed: -30,
+            useCustomSlidingRotationalSpeed: true
         };
 
-        // Nose Gear
-        const noseGear = createGear(3 * scale, 0, 0);
-        this.chassisMesh.add(noseGear);
-        this.gearMeshes.push(noseGear);
+        // 1. Nose Gear
+        wheelOptions.chassisConnectionPointLocal.set(3 * scale, -0.4 * scale, 0);
+        this.vehicle.addWheel(wheelOptions);
 
-        // Main Gear (Left & Right)
-        const leftGear = createGear(-1 * scale, 0, 1.5 * scale);
-        const rightGear = createGear(-1 * scale, 0, -1.5 * scale);
-        this.chassisMesh.add(leftGear);
-        this.chassisMesh.add(rightGear);
-        this.gearMeshes.push(leftGear, rightGear);
+        // 2. Main Gear Left
+        wheelOptions.chassisConnectionPointLocal.set(-1 * scale, -0.4 * scale, 1.5 * scale);
+        this.vehicle.addWheel(wheelOptions);
+
+        // 3. Main Gear Right
+        wheelOptions.chassisConnectionPointLocal.set(-1 * scale, -0.4 * scale, -1.5 * scale);
+        this.vehicle.addWheel(wheelOptions);
+
+        this.vehicle.addToWorld(world);
+
+        // --- Visual Wheel Meshes ---
+        const gearMat = new THREE.MeshPhongMaterial({ color: 0x333333 });
+        const wheelGeom = new THREE.CylinderGeometry(
+            CONSTANTS.AERO.GEAR.WHEEL_RADIUS * scale,
+            CONSTANTS.AERO.GEAR.WHEEL_RADIUS * scale,
+            0.2 * scale, 16
+        );
+
+        this.vehicle.wheelInfos.forEach(() => {
+            const wheelGroup = new THREE.Group();
+            const wheelMesh = new THREE.Mesh(wheelGeom, gearMat);
+            wheelMesh.rotation.x = Math.PI / 2; // Cylinder to Z axle
+            wheelGroup.add(wheelMesh);
+            this.wheelMeshes.push(wheelGroup);
+            scene.add(wheelGroup);
+        });
 
         // --- Airbrake Visuals ---
         const abGeom = new THREE.BoxGeometry(0.5 * scale, 1.5 * scale, 0.1 * scale);
@@ -142,9 +163,13 @@ export class FixedWing {
     }
 
     updateSystemsVisuals() {
-        // Gear Animation (Instant for now, or could rotate)
-        this.gearMeshes.forEach(mesh => {
-            mesh.visible = this.gearDown;
+        // Gear Extension/Retraction
+        const scale = CONSTANTS.AERO.SCALE || 0.4;
+        const targetLength = this.gearDown ? (CONSTANTS.AERO.GEAR.SUSPENSION_REST_LENGTH * scale) : 0;
+
+        this.vehicle.wheelInfos.forEach((wheel, index) => {
+            wheel.suspensionRestLength = targetLength;
+            this.wheelMeshes[index].visible = this.gearDown;
         });
 
         // Airbrake Animation
@@ -162,6 +187,14 @@ export class FixedWing {
         if (!this.chassisBody || !this.chassisMesh) return;
         this.chassisMesh.position.copy(this.chassisBody.position);
         this.chassisMesh.quaternion.copy(this.chassisBody.quaternion);
+
+        // Sync wheels
+        this.vehicle.wheelInfos.forEach((wheel, index) => {
+            this.vehicle.updateWheelTransform(index);
+            const t = wheel.worldTransform;
+            this.wheelMeshes[index].position.copy(t.position);
+            this.wheelMeshes[index].quaternion.copy(t.quaternion);
+        });
     }
 
     reset() {
@@ -177,10 +210,53 @@ export class FixedWing {
         this.chassisBody.wakeUp();
     }
 
-    // Compatibility methods for Game.js if it calls them
-    applyEngineForce() { }
-    setBrake() { }
-    setSteeringValue() { }
+    straighten() {
+        if (!this.chassisBody) return;
+        const currentPosition = this.chassisBody.position.clone();
+
+        // Preserve Yaw (Euler Y)
+        const euler = new CANNON.Vec3();
+        this.chassisBody.quaternion.toEuler(euler);
+        const newQuaternion = new CANNON.Quaternion();
+        newQuaternion.setFromEuler(0, euler.y, 0);
+        this.chassisBody.quaternion.copy(newQuaternion);
+
+        // Maintain altitude but reset velocities
+        this.chassisBody.velocity.setZero();
+        this.chassisBody.angularVelocity.setZero();
+        this.chassisBody.position.y = Math.max(currentPosition.y, 1.0); // Minimum height
+
+        // Reset physical wheels if vehicle exists
+        if (this.vehicle) {
+            for (let i = 0; i < this.vehicle.wheelInfos.length; i++) {
+                this.vehicle.wheelInfos[i].suspensionLength = 0;
+                this.vehicle.wheelInfos[i].suspensionForce = 0;
+                this.vehicle.wheelInfos[i].suspensionRelativeVelocity = 0;
+                this.vehicle.wheelInfos[i].deltaRotation = 0;
+                this.vehicle.wheelInfos[i].steering = 0;
+            }
+        }
+
+        this.chassisBody.wakeUp();
+        this.provideTempCollisionProtection(null, 3000);
+    }
+
+    // Compatibility methods for Game.js
+    applyEngineForce(force, wheelIndex) {
+        if (this.vehicle && wheelIndex < this.vehicle.wheelInfos.length) {
+            this.vehicle.applyEngineForce(force, wheelIndex);
+        }
+    }
+    setBrake(force, wheelIndex) {
+        if (this.vehicle && wheelIndex < this.vehicle.wheelInfos.length) {
+            this.vehicle.setBrake(force, wheelIndex);
+        }
+    }
+    setSteeringValue(value, wheelIndex) {
+        if (this.vehicle && wheelIndex < this.vehicle.wheelInfos.length) {
+            this.vehicle.setSteeringValue(value, wheelIndex);
+        }
+    }
     provideTempCollisionProtection(callback, duration) {
         // Clean up existing protection if any
         if (this.currentCollisionProtection) {

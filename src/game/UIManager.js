@@ -438,7 +438,7 @@ export class UIManager {
         // Update Pitch Ladder
         // Each degree is 10px. 
         this.ladderContainer.style.top = `calc(50% + ${pitchDeg * 10}px)`;
-        this.pitchLadder.style.transform = `translate(-50%, -50%) rotate(${-rollRad}rad)`;
+        this.pitchLadder.style.transform = `translate(-50%, -50%) rotate(${rollRad}rad)`;
 
         // Update System Indicators
         let sysText = "";

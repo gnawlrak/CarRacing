@@ -48,19 +48,32 @@ export const CONSTANTS = {
         PITCH_SENSITIVITY: 6000,
         ROLL_SENSITIVITY: 7000,
         YAW_SENSITIVITY: 2500,
-        MAX_THRUST: 5376, // 1.095 * 500kg * 9.82
-        THROTTLE_STEP: 0.01,
+        MAX_THRUST: 8000, // Increased for better TWR (approx 1.6 max)
+        THROTTLE_STEP: 0.02, // Faster response
         STALL_SPEED_MS: 18.9, // 68 km/h
         CRUISE_SPEED_MS: 100.3, // 361 km/h
         MAX_SPEED_MS: 111.1, // 400 km/h
         MAX_ALTITUDE: 2530,
         CLIMB_RATE_TARGET: 42,
-        TWR: 1.095,
+        TWR: 1.6,
         SCALE: 0.4,
         GEAR_DRAG: 0.05,
         AIRBRAKE_DRAG: 0.15,
         ROLLING_FRICTION: 0.01,
-        BRAKE_FORCE: 2000
+        BRAKE_FORCE: 10000000, // Matching car brake force
+
+        // Physical Gear (RaycastVehicle)
+        GEAR: {
+            SUSPENSION_STIFFNESS: 50,
+            SUSPENSION_REST_LENGTH: 0.5,
+            DAMPING_RELAXATION: 2.5,
+            DAMPING_COMPRESSION: 2.5,
+            FRICTION_SLIP: 4.0, // High friction for "lockup" feel
+            ROLL_INFLUENCE: 0.01,
+            MAX_SUSPENSION_FORCE: 100000,
+            MAX_SUSPENSION_TRAVEL: 0.4,
+            WHEEL_RADIUS: 0.3
+        }
     },
 
     // Debug

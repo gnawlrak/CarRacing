@@ -13,10 +13,19 @@ export class FlightManager {
 
         const velocity = chassisBody.velocity;
         const speed = velocity.length();
-        if (speed < 0.1) return;
 
         const isFixedWing = this.game.vehicle.type === 'FixedWing';
         const keys = this.game.inputManager.keys;
+        const vehicle = this.game.vehicle;
+
+        let onGround = false;
+        if (isFixedWing && vehicle.vehicle) {
+            let wheelsOnGround = 0;
+            vehicle.vehicle.wheelInfos.forEach((wheel) => {
+                if (wheel.raycastResult.body) wheelsOnGround++;
+            });
+            onGround = wheelsOnGround > 0;
+        }
 
         if (isFixedWing) {
             // --- Realistic Aerodynamics ---
@@ -45,7 +54,7 @@ export class FlightManager {
             chassisBody.applyLocalForce(liftForce, new CANNON.Vec3(0, 0, 0));
 
             // Drag opposes world velocity
-            const worldDragDir = velocity.unit().scale(-1);
+            const worldDragDir = speed > 0.1 ? velocity.unit().scale(-1) : new CANNON.Vec3(0, 0, 0);
             const worldDragForce = worldDragDir.scale(dragMag);
             chassisBody.applyForce(worldDragForce, new CANNON.Vec3(0, 0, 0));
 
@@ -76,43 +85,25 @@ export class FlightManager {
                 this.hPressed = false;
             }
 
-            // Brakes (Hold B)
-            vehicle.braking = (keys.b || keys.B);
+            // Brakes (Car style: Space/B/S on ground)
+            vehicle.braking = (keys.b || keys.B || keys.Space || (onGround && (keys.s || keys.S)));
+            if (vehicle.braking) {
+                this.game.uiManager.showFlightNotification("BRAKING", 100);
+            }
 
             // --- Extra Drag ---
             let extraDragCoeff = 0;
             if (vehicle.gearDown) extraDragCoeff += CONSTANTS.AERO.GEAR_DRAG;
             if (vehicle.airbrakeActive) extraDragCoeff += CONSTANTS.AERO.AIRBRAKE_DRAG;
 
-            if (extraDragCoeff > 0) {
+            if (extraDragCoeff > 0 && speed > 0.1) {
                 const extraDragMag = dynamicPressure * extraDragCoeff * CONSTANTS.AERO.WING_AREA;
                 const extraDragForce = worldDragDir.scale(extraDragMag); // worldDragDir is -unit(vel)
                 chassisBody.applyForce(extraDragForce, new CANNON.Vec3(0, 0, 0));
             }
 
-            // --- Ground Interaction ---
-            const altitude = chassisBody.position.y;
-            const onGround = altitude < 1.2 * (CONSTANTS.AERO.SCALE || 0.4) + 0.1; // Check if wheels touch ground
-
-            if (onGround && vehicle.gearDown) {
-                // 1. Rolling Friction (opposes forward velocity)
-                const frictionMag = 500 * 9.81 * CONSTANTS.AERO.ROLLING_FRICTION; // Approx Normal Force * coeff
-                // simplified friction that only acts if moving forward
-                if (vx > 0.1) {
-                    const frictionForce = new CANNON.Vec3(-frictionMag, 0, 0);
-                    chassisBody.applyLocalForce(frictionForce, new CANNON.Vec3(0, 0, 0));
-                }
-
-                // 2. Brakes
-                if (vehicle.braking && vx > 0.1) {
-                    const brakeForce = new CANNON.Vec3(-CONSTANTS.AERO.BRAKE_FORCE, 0, 0);
-                    chassisBody.applyLocalForce(brakeForce, new CANNON.Vec3(0, 0, 0));
-                    this.game.uiManager.showFlightNotification("BRAKING", 100); // Short duration for hold
-                }
-            }
-
             // --- Turbojet & Performance Limits ---
-            // const altitude = chassisBody.position.y; // Original declaration, now moved/handled above
+            const altitude = chassisBody.position.y;
             if (keys.ArrowUp) {
                 if (this.game.vehicle.throttle >= 1.0) {
                     this.game.vehicle.afterburner = true;
@@ -136,8 +127,8 @@ export class FlightManager {
                 thrustMultiplier = Math.max(0, 1.0 - (altitude - CONSTANTS.AERO.MAX_ALTITUDE) / 500);
             }
 
-            const milPowerRatio = 0.7;
-            const abMultiplier = 2.0; // Doubled AB thrust
+            const milPowerRatio = 0.85; // Increased for better non-AB takeoff
+            const abMultiplier = 2.0;
             const currentPower = this.game.vehicle.afterburner ? abMultiplier : (this.game.vehicle.throttle * milPowerRatio);
             const thrustMagnitude = currentPower * CONSTANTS.AERO.MAX_THRUST * thrustMultiplier;
             const thrustForce = new CANNON.Vec3(thrustMagnitude, 0, 0);
@@ -176,12 +167,19 @@ export class FlightManager {
 
         if (isFixedWing) {
             // Inputs
-            if (keys.s || keys.S) torque.z += CONSTANTS.AERO.PITCH_SENSITIVITY;
-            if (keys.w || keys.W) torque.z -= CONSTANTS.AERO.PITCH_SENSITIVITY * 0.6; // Reduced -G sensitivity
+            if (keys.w || keys.W) torque.z += CONSTANTS.AERO.PITCH_SENSITIVITY;
+            if (keys.s || keys.S) torque.z -= CONSTANTS.AERO.PITCH_SENSITIVITY * 0.6; // Reduced -G sensitivity
             if (keys.a || keys.A) torque.x -= CONSTANTS.AERO.ROLL_SENSITIVITY;
             if (keys.d || keys.D) torque.x += CONSTANTS.AERO.ROLL_SENSITIVITY;
-            if (keys.ArrowLeft) torque.y += CONSTANTS.AERO.YAW_SENSITIVITY;
-            if (keys.ArrowRight) torque.y -= CONSTANTS.AERO.YAW_SENSITIVITY;
+            if (keys.q || keys.Q) torque.y += CONSTANTS.AERO.YAW_SENSITIVITY;
+            if (keys.e || keys.E) torque.y -= CONSTANTS.AERO.YAW_SENSITIVITY;
+
+            // --- Ground Control Restriction ---
+            // If on ground, disable roll and pitch torques to prevent tipping/flipping
+            if (onGround) {
+                torque.x = 0;
+                torque.z = 0;
+            }
 
             const worldUp = new CANNON.Vec3(0, 1, 0);
             const localForward = new CANNON.Vec3(1, 0, 0);
