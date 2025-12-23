@@ -5,18 +5,23 @@ export class FlightManager {
     constructor(game) {
         this.game = game;
         this.gPressed = false;
-        this.hPressed = false;
+        this.kPressed = false;
     }
 
     applyAeroForces(chassisBody) {
         if (!chassisBody) return;
+
+        const vehicle = this.game.vehicle;
+        if (vehicle.type === 'FixedWing' && vehicle.hoverMode) {
+            this.applyHoverForces(chassisBody);
+            return;
+        }
 
         const velocity = chassisBody.velocity;
         const speed = velocity.length();
 
         const isFixedWing = this.game.vehicle.type === 'FixedWing';
         const keys = this.game.inputManager.keys;
-        const vehicle = this.game.vehicle;
 
         let onGround = false;
         if (isFixedWing && vehicle.vehicle) {
@@ -62,9 +67,6 @@ export class FlightManager {
             const sideForce = new CANNON.Vec3(0, 0, sideMag);
             chassisBody.applyLocalForce(sideForce, new CANNON.Vec3(0, 0, 0));
 
-            // --- System Toggles (G: Gear, H: Airbrake, B: Brake) ---
-            const vehicle = this.game.vehicle;
-
             // Gear toggle
             if ((keys.g || keys.G) && !this.gPressed) {
                 vehicle.gearDown = !vehicle.gearDown;
@@ -75,14 +77,14 @@ export class FlightManager {
                 this.gPressed = false;
             }
 
-            // Airbrake toggle
-            if ((keys.h || keys.H) && !this.hPressed) {
+            // Airbrake toggle (Changed from H to K)
+            if ((keys.k || keys.K) && !this.kPressed) {
                 vehicle.airbrakeActive = !vehicle.airbrakeActive;
                 this.game.uiManager.showFlightNotification(vehicle.airbrakeActive ? "AIRBRAKE ON" : "AIRBRAKE OFF");
                 vehicle.updateSystemsVisuals();
-                this.hPressed = true;
-            } else if (!(keys.h || keys.H)) {
-                this.hPressed = false;
+                this.kPressed = true;
+            } else if (!(keys.k || keys.K)) {
+                this.kPressed = false;
             }
 
             // Brakes (Hold B)
@@ -241,5 +243,85 @@ export class FlightManager {
         const finalWorldTorque = new CANNON.Vec3();
         chassisBody.quaternion.vmult(torque, finalWorldTorque);
         chassisBody.applyTorque(finalWorldTorque);
+    }
+
+    applyHoverForces(chassisBody) {
+        const keys = this.game.inputManager.keys;
+        const config = CONSTANTS.HOVER;
+
+        // 1. Counter Gravity
+        const gravityForce = new CANNON.Vec3(0, -CONSTANTS.GRAVITY * chassisBody.mass, 0);
+        chassisBody.applyForce(gravityForce, new CANNON.Vec3(0, 0, 0));
+
+        // 2. Translational Forces (WASD)
+        const force = new CANNON.Vec3(0, 0, 0);
+        const torque = new CANNON.Vec3(0, 0, 0);
+
+        const localForward = new CANNON.Vec3(1, 0, 0);
+        const localRight = new CANNON.Vec3(0, 0, 1);
+        const localUp = new CANNON.Vec3(0, 1, 0);
+        chassisBody.quaternion.vmult(localForward, localForward);
+        chassisBody.quaternion.vmult(localRight, localRight);
+        chassisBody.quaternion.vmult(localUp, localUp);
+
+        if (keys.w || keys.W) {
+            force.addScaledVector(config.FORCE, localForward, force);
+            torque.z += CONSTANTS.AERO.PITCH_SENSITIVITY * 0.1; // Tilt down
+        }
+        if (keys.s || keys.S) {
+            force.addScaledVector(-config.FORCE, localForward, force);
+            torque.z -= CONSTANTS.AERO.PITCH_SENSITIVITY * 0.1; // Tilt up
+        }
+        if (keys.a || keys.A) {
+            force.addScaledVector(config.FORCE, localRight, force);
+            torque.x -= CONSTANTS.AERO.ROLL_SENSITIVITY * 0.1; // Roll left
+        }
+        if (keys.d || keys.D) {
+            force.addScaledVector(-config.FORCE, localRight, force);
+            torque.x += CONSTANTS.AERO.ROLL_SENSITIVITY * 0.1; // Roll right
+        }
+
+        // 3. Vertical (Numpad 8/2 or Arrows Up/Down)
+        if (keys.Num8 || keys.ArrowUp) force.y += config.FORCE * 1.5;
+        if (keys.Num2 || keys.ArrowDown) force.y -= config.FORCE * 1.5;
+
+        // 4. Rotation (QE for Yaw)
+        const yawSens = CONSTANTS.HOVER.YAW_SENSITIVITY || 8000;
+        let qeWorldYaw = 0;
+        if (keys.q || keys.Q) qeWorldYaw += yawSens;
+        if (keys.e || keys.E) qeWorldYaw -= yawSens;
+
+        // Mouse influence (Simulated as stick input)
+        const pitchLimit = Math.PI / 4;
+        const currentPitch = Math.asin(localForward.y);
+        // We can just apply torque based on Mouse movement if available, 
+        // but here we use the cameraPitchAngle as a target or just stick to keys.
+        // Let's use cameraPitchAngle for nose pointing as user requested.
+        const targetPitch = this.game.inputManager.cameraPitchAngle || 0;
+        const pitchError = targetPitch - currentPitch;
+        torque.z += pitchError * CONSTANTS.AERO.PITCH_SENSITIVITY * 0.5;
+
+        // 5. Auto-Stabilization (Leveling)
+        if (!keys.w && !keys.s && !keys.a && !keys.d) {
+            // Level Roll
+            const rollError = localRight.y;
+            torque.x -= rollError * CONSTANTS.AERO.ROLL_STABILIZATION_FORCE * 0.5;
+
+            // Level Pitch if no vertical movement? No, follow mouse.
+        }
+
+        // Apply
+        chassisBody.applyForce(force, new CANNON.Vec3(0, 0, 0));
+        const worldTorque = new CANNON.Vec3();
+        chassisBody.quaternion.vmult(torque, worldTorque);
+
+        // Add QE rotation in world space to ensure pure yaw
+        worldTorque.y += qeWorldYaw;
+
+        chassisBody.applyTorque(worldTorque);
+
+        // Apply heavy damping manually to dampen noise
+        chassisBody.velocity.scale(config.DAMPING, chassisBody.velocity);
+        chassisBody.angularVelocity.scale(config.DAMPING, chassisBody.angularVelocity);
     }
 }

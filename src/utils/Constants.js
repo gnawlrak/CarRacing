@@ -83,7 +83,41 @@ export const CONSTANTS = {
         VEHICLE_MAX_HEALTH: 200,
         AIRCRAFT_MAX_HEALTH: 100,
         COLLISION_DAMAGE_THRESHOLD: 8000, // Significant impact needed (>28 km/h for car)
-        IMPACT_DAMAGE_RATIO: 0.002 // Much lower damage per impulse
+        IMPACT_DAMAGE_RATIO: 0.002, // Much lower damage per impulse
+        OVERSPEED_THRESHOLD_KMH: 385.6,
+        OVERSPEED_DAMAGE_RATE: 5.0 // HP per second
+    },
+
+    // Weapons (M61 Vulcan 20mm)
+    WEAPON: {
+        M61: {
+            VELOCITY: 1030, // m/s
+            DAMAGE: 1.5, // 20mm round damage
+            RPM_LOW: 4000,
+            RPM_HIGH: 6000,
+            MAX_RANGE: 2000, // meters
+            SHAKE_INTENSITY: 0.1,
+            FLASH_SCALE: 1.5,
+            IMPACT_COLOR_SPARK: 0xffff44,
+            IMPACT_COLOR_DUST: 0x8b4513 // SaddleBrown for dust
+        }
+    },
+
+    // Hover Mode (VTOL)
+    HOVER: {
+        MAX_SPEED: 50, // km/h
+        FORCE: 15000,
+        ALTITUDE_SPEED: 10,
+        DAMPING: 0.95, // Linear/Angular damping in hover
+        TILT_LIMIT: Math.PI / 12, // 15 degrees tilt when moving
+        YAW_SENSITIVITY: 8000 // Higher for precise hover rotation
+    },
+
+    // Chunk System Optimization
+    CHUNKS: {
+        VIEW_DISTANCE: 3, // radius in chunks
+        UNLOAD_DISTANCE: 5,
+        CACHE_RADIUS: 1 // chunks always kept active
     },
 
     // Debug

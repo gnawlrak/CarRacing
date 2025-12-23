@@ -280,6 +280,17 @@ export class UIManager {
             z-index: 999;
         `;
 
+        // Animation for blinking warnings
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes blink {
+                0% { opacity: 1; }
+                50% { opacity: 0.3; }
+                100% { opacity: 1; }
+            }
+        `;
+        document.head.appendChild(style);
+
         // 1. Center Crosshair (Flight Path Marker / Gun Cross)
         const crosshair = document.createElement('div');
         crosshair.style.cssText = `
@@ -511,6 +522,11 @@ export class UIManager {
         if (!vehicle.gearDown) sysText += "GEAR UP\n";
         if (vehicle.airbrakeActive) sysText += "AIRBRAKE\n";
         if (vehicle.braking) sysText += '<span style="color: #ff4444">BRAKES</span>\n';
+
+        // Weapon / Overspeed
+        if (vehicle.cannonRPM) sysText += `CAN RPM: ${vehicle.cannonRPM}\n`;
+        if (vehicle.overspeedWarning) sysText += '<span style="color: #ff0000; font-weight: bold; animation: blink 0.5s infinite">OVERSPEED</span>\n';
+
         this.hudSystems.innerHTML = sysText;
     }
 

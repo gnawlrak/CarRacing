@@ -187,53 +187,94 @@ export class Environment {
     }
 
     updateTerrain() {
+        if (!this.game.vehicle || !this.game.vehicle.chassisBody) return;
+
         const vehiclePosition = this.game.vehicle.chassisBody.position;
         const chunkSize = CONSTANTS.CHUNK_SIZE;
-        const currentChunkX = Math.floor(vehiclePosition.x / chunkSize) * chunkSize;
-        const currentChunkZ = Math.floor(vehiclePosition.z / chunkSize) * chunkSize;
+        const viewDist = CONSTANTS.CHUNKS.VIEW_DISTANCE || 3;
+        const unloadDist = CONSTANTS.CHUNKS.UNLOAD_DISTANCE || 5;
 
-        const adjacentChunks = [
-            [0, 0], [chunkSize, 0], [-chunkSize, 0],
-            [0, chunkSize], [0, -chunkSize],
-            [chunkSize, chunkSize], [chunkSize, -chunkSize],
-            [-chunkSize, chunkSize], [-chunkSize, -chunkSize]
-        ];
+        // Set up frustum for visibility check
+        const frustum = new THREE.Frustum();
+        const projScreenMatrix = new THREE.Matrix4();
+        this.game.camera.updateMatrixWorld();
+        projScreenMatrix.multiplyMatrices(this.game.camera.projectionMatrix, this.game.camera.matrixWorldInverse);
+        frustum.setFromProjectionMatrix(projScreenMatrix);
 
-        adjacentChunks.forEach(offset => {
-            const [offsetX, offsetZ] = offset;
-            const chunkX = currentChunkX + offsetX;
-            const chunkZ = currentChunkZ + offsetZ;
+        // Current chunk coords
+        const currentChunkX = Math.round(vehiclePosition.x / chunkSize) * chunkSize;
+        const currentChunkZ = Math.round(vehiclePosition.z / chunkSize) * chunkSize;
 
-            if (!this.loadedChunks.some(chunk => chunk.x === chunkX && chunk.z === chunkZ)) {
-                this.createTerrainChunk(chunkX, chunkZ);
+        // 1. Scan for new chunks within a radius
+        for (let x = -viewDist; x <= viewDist; x++) {
+            for (let z = -viewDist; z <= viewDist; z++) {
+                const chunkX = currentChunkX + x * chunkSize;
+                const chunkZ = currentChunkZ + z * chunkSize;
+
+                // Check if already loaded
+                const isLoaded = this.loadedChunks.some(c => c.x === chunkX && c.z === chunkZ);
+                if (isLoaded) continue;
+
+                // Check if in frustum or very close (radius 1 always loads to prevent popping at edges)
+                const distSq = x * x + z * z;
+                if (distSq <= 1) {
+                    this.createTerrainChunk(chunkX, chunkZ);
+                    continue;
+                }
+
+                // Box for frustum check
+                const box = new THREE.Box3(
+                    new THREE.Vector3(chunkX - chunkSize / 2, -10, chunkZ - chunkSize / 2),
+                    new THREE.Vector3(chunkX + chunkSize / 2, 50, chunkZ + chunkSize / 2)
+                );
+
+                if (frustum.intersectsBox(box)) {
+                    this.createTerrainChunk(chunkX, chunkZ);
+                }
             }
-        });
+        }
 
         const world = this.game.physicsWorld.world;
         const scene = this.game.scene;
 
+        // 2. Update visibility and unload distant chunks
         this.loadedChunks = this.loadedChunks.filter(chunk => {
-            const distance = Math.sqrt(
-                Math.pow(chunk.x - vehiclePosition.x, 2) +
-                Math.pow(chunk.z - vehiclePosition.z, 2)
-            );
-            if (distance > chunkSize * 2) {
-                scene.remove(chunk.mesh);
-                chunk.buildings.forEach(building => {
-                    if (building.mesh) scene.remove(building.mesh); // building.mesh for natural elements too (wrapper)
-                    // Wait, createNaturalElement returns {mesh, body}.
-                    // In buildings loop, it pushes {mesh, body, border}.
-                    // So `building.mesh` is consistent.
+            const dx = (chunk.x - vehiclePosition.x) / chunkSize;
+            const dz = (chunk.z - vehiclePosition.z) / chunkSize;
+            const distChunks = Math.sqrt(dx * dx + dz * dz);
 
-                    if (building.border) {
-                        scene.remove(building.border);
-                    }
-                    if (building.body) {
-                        world.removeBody(building.body);
-                    }
+            // Unload if too far
+            if (distChunks > unloadDist) {
+                scene.remove(chunk.mesh);
+                chunk.buildings.forEach(b => {
+                    if (b.mesh) scene.remove(b.mesh);
+                    if (b.border) scene.remove(b.border);
+                    if (b.body) world.removeBody(b.body);
                 });
                 return false;
             }
+
+            // Visibility Toggle (Frustum Culling)
+            // Always keep nearby chunks visible (radius 1.5)
+            if (distChunks < 1.5) {
+                chunk.mesh.visible = true;
+                chunk.buildings.forEach(b => {
+                    if (b.mesh) b.mesh.visible = true;
+                    if (b.border) b.border.visible = true;
+                });
+            } else {
+                const box = new THREE.Box3(
+                    new THREE.Vector3(chunk.x - chunkSize / 2, -10, chunk.z - chunkSize / 2),
+                    new THREE.Vector3(chunk.x + chunkSize / 2, 50, chunk.z + chunkSize / 2)
+                );
+                const isVisible = frustum.intersectsBox(box);
+                chunk.mesh.visible = isVisible;
+                chunk.buildings.forEach(b => {
+                    if (b.mesh) b.mesh.visible = isVisible;
+                    if (b.border) b.border.visible = isVisible;
+                });
+            }
+
             return true;
         });
     }

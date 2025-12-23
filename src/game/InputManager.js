@@ -28,8 +28,17 @@ export class InputManager {
             H: false,
             b: false,
             B: false,
+            v: false,
+            V: false,
+            h: false,
+            H: false,
+            k: false,
+            K: false,
+            Num8: false,
+            Num2: false,
             ShiftLeft: false,
-            ShiftRight: false
+            ShiftRight: false,
+            MouseButton0: false // Left Click
         };
 
         // Custom event handlers
@@ -75,16 +84,29 @@ export class InputManager {
         if (event.key === 'f' || event.key === 'F') {
             if (this.onFlightToggle) this.onFlightToggle();
         }
+
+        if (event.key === 'h' || event.key === 'H') {
+            if (this.onHoverToggle) this.onHoverToggle();
+        }
+
+        // Handle Numpad keys (often come as Numpad8, etc.)
+        if (event.code === 'Numpad8') this.keys['Num8'] = true;
+        if (event.code === 'Numpad2') this.keys['Num2'] = true;
     }
 
     onKeyUp(event) {
         this.keys[event.key] = false;
+        if (event.code === 'Numpad8') this.keys['Num8'] = false;
+        if (event.code === 'Numpad2') this.keys['Num2'] = false;
     }
 
     onMouseDown(event) {
         if (event.button === 2) { // Right click
             this.isDragging = true;
             this.lastMouseX = event.clientX;
+        }
+        if (event.button === 0) { // Left click
+            this.keys['MouseButton0'] = true;
         }
     }
 
@@ -130,6 +152,9 @@ export class InputManager {
     onMouseUp(event) {
         if (event.button === 2) {
             this.isDragging = false;
+        }
+        if (event.button === 0) {
+            this.keys['MouseButton0'] = false;
         }
     }
 

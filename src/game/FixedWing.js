@@ -19,6 +19,15 @@ export class FixedWing {
         this.airbrakeMeshes = [];
         this.maxHealth = CONSTANTS.HEALTH.AIRCRAFT_MAX_HEALTH;
         this.health = this.maxHealth;
+
+        // Weapon Systems
+        this.cannonRPM = CONSTANTS.WEAPON.M61.RPM_HIGH; // Default to 6000
+        this.lastFireTime = 0;
+        this.projectiles = [];
+        this.isFiring = false;
+        this.overspeedWarning = false;
+        this.muzzleFlashTimer = 0;
+        this.hoverMode = false;
     }
 
     init() {
@@ -88,6 +97,15 @@ export class FixedWing {
         this.flameMesh.position.set(-4.2 * scale, 0, 0);
         this.flameMesh.visible = false;
         this.chassisMesh.add(this.flameMesh);
+
+        // --- Muzzle Flash Visual ---
+        const muzzleFlashGeom = new THREE.ConeGeometry(0.2 * scale, 1.0 * scale, 8);
+        const muzzleFlashMat = new THREE.MeshBasicMaterial({ color: 0xffffaa, transparent: true, opacity: 0.9 });
+        this.muzzleFlash = new THREE.Mesh(muzzleFlashGeom, muzzleFlashMat);
+        this.muzzleFlash.rotation.z = -Math.PI / 2; // Pointing forward
+        this.muzzleFlash.position.set(4.5 * scale, 0, 0); // At the nose
+        this.muzzleFlash.visible = false;
+        this.chassisMesh.add(this.muzzleFlash);
 
         // --- Physical Landing Gear (RaycastVehicle) ---
         this.vehicle = new CANNON.RaycastVehicle({
@@ -223,6 +241,137 @@ export class FixedWing {
         if (this.flameMesh) {
             this.flameMesh.visible = this.afterburner;
         }
+
+        // Overspeed Check
+        const speedKmh = this.chassisBody.velocity.length() * 3.6;
+        const maxSafeSpeed = CONSTANTS.HEALTH.OVERSPEED_THRESHOLD_KMH;
+        if (speedKmh > maxSafeSpeed) {
+            this.overspeedWarning = true;
+            // Apply damage over time (scaled by 1/60s per frame)
+            const damage = CONSTANTS.HEALTH.OVERSPEED_DAMAGE_RATE * (1 / 60);
+            this.takeDamage(damage);
+        } else {
+            this.overspeedWarning = false;
+        }
+
+        // Muzzle Flash Timer
+        if (this.muzzleFlashTimer > 0) {
+            this.muzzleFlashTimer -= 1 / 60;
+            if (this.muzzleFlashTimer <= 0) {
+                this.muzzleFlash.visible = false;
+            }
+        }
+
+        // Update Projectiles
+        this.updateProjectiles();
+    }
+
+    updateProjectiles() {
+        const dt = 1 / 60;
+        for (let i = this.projectiles.length - 1; i >= 0; i--) {
+            const p = this.projectiles[i];
+            p.life -= dt;
+            if (p.life <= 0) {
+                this.game.scene.remove(p.mesh);
+                this.projectiles.splice(i, 1);
+                continue;
+            }
+            // Move bullet
+            p.mesh.position.addScaledVector(p.velocity, dt);
+
+            // Basic ground collision for bullets
+            if (p.mesh.position.y < 0) {
+                this.createImpactEffect(p.mesh.position);
+                this.game.scene.remove(p.mesh);
+                this.projectiles.splice(i, 1);
+                continue;
+            }
+        }
+    }
+
+    createImpactEffect(position) {
+        // Spark
+        const sparkGeom = new THREE.SphereGeometry(0.5, 4, 4);
+        const sparkMat = new THREE.MeshBasicMaterial({ color: CONSTANTS.WEAPON.M61.IMPACT_COLOR_SPARK });
+        const spark = new THREE.Mesh(sparkGeom, sparkMat);
+        spark.position.copy(position);
+        this.game.scene.add(spark);
+
+        // Dust
+        const dustGeom = new THREE.SphereGeometry(1.5, 6, 6);
+        const dustMat = new THREE.MeshBasicMaterial({
+            color: CONSTANTS.WEAPON.M61.IMPACT_COLOR_DUST,
+            transparent: true,
+            opacity: 0.6
+        });
+        const dust = new THREE.Mesh(dustGeom, dustMat);
+        dust.position.copy(position);
+        dust.position.y += 0.5;
+        this.game.scene.add(dust);
+
+        setTimeout(() => {
+            this.game.scene.remove(spark);
+            this.game.scene.remove(dust);
+        }, 150);
+    }
+
+    fire() {
+        const now = Date.now();
+        const interval = 60000 / this.cannonRPM; // ms per shot
+        if (now - this.lastFireTime < interval) return;
+
+        this.lastFireTime = now;
+
+        // Create bullet visual
+        const bulletGeom = new THREE.SphereGeometry(0.15, 8, 8);
+        const bulletMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+        const bulletMesh = new THREE.Mesh(bulletGeom, bulletMat);
+
+        // Spawn at nose
+        const forward = new THREE.Vector3(1, 0, 0);
+        forward.applyQuaternion(this.chassisMesh.quaternion);
+
+        const noseOffset = forward.clone().multiplyScalar(4.5 * (CONSTANTS.AERO.SCALE || 0.4));
+        bulletMesh.position.copy(this.chassisMesh.position).add(noseOffset);
+
+        this.game.scene.add(bulletMesh);
+
+        // Muzzle Flash
+        this.muzzleFlash.visible = true;
+        this.muzzleFlashTimer = 0.05;
+
+        // Recoil / Screen Shake
+        if (this.game.applyRecoil) {
+            this.game.applyRecoil(CONSTANTS.WEAPON.M61.SHAKE_INTENSITY);
+        }
+
+        // Physics velocity
+        const bulletVel = forward.clone().multiplyScalar(CONSTANTS.WEAPON.M61.VELOCITY);
+        // Inherit aircraft velocity
+        const planeVel = new THREE.Vector3().copy(this.chassisBody.velocity);
+        bulletVel.add(planeVel);
+
+        this.projectiles.push({
+            mesh: bulletMesh,
+            velocity: bulletVel,
+            life: 2.0 // 2 seconds life
+        });
+    }
+
+    setFireRate(rpm) {
+        this.cannonRPM = rpm;
+    }
+
+    toggleHover() {
+        this.hoverMode = !this.hoverMode;
+        if (this.hoverMode) {
+            // Enable heavy damping and counter gravity
+            this.chassisBody.linearDamping = 0.8;
+            this.chassisBody.angularDamping = 0.8;
+        } else {
+            this.chassisBody.linearDamping = 0.01;
+            this.chassisBody.angularDamping = 0.01;
+        }
     }
 
     reset() {
@@ -237,6 +386,10 @@ export class FixedWing {
 
         this.chassisBody.wakeUp();
         this.health = this.maxHealth;
+
+        // Clear projectiles on reset
+        this.projectiles.forEach(p => this.game.scene.remove(p.mesh));
+        this.projectiles = [];
     }
 
     straighten() {

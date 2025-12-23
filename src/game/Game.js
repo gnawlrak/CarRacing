@@ -37,6 +37,9 @@ export class Game {
 
         // Bind loop
         this.animate = this.animate.bind(this);
+
+        // Juice
+        this.cameraShake = 0;
     }
 
     get scene() { return this.sceneManager.scene; }
@@ -74,6 +77,12 @@ export class Game {
             if (this.flightMode && CONSTANTS.DEBUG) console.log("Flight Mode: ON");
             else if (CONSTANTS.DEBUG) console.log("Flight Mode: OFF");
         };
+        this.inputManager.onHoverToggle = () => {
+            if (this.vehicle.type === 'FixedWing') {
+                this.vehicle.toggleHover();
+                this.uiManager.showFlightNotification(this.vehicle.hoverMode ? "HOVER MODE ON" : "HOVER MODE OFF");
+            }
+        };
 
         // Start Loop
         this.animate();
@@ -92,7 +101,34 @@ export class Game {
             this.isBoosting
         );
 
+        // Handle Weapons
+        if ((this.inputManager.isPressed(' ') || this.inputManager.isPressed('Space')) && this.vehicle.fire) {
+            this.vehicle.fire();
+        }
+
+        // Handle Fire Rate Toggle (V key - debounced)
+        if (this.inputManager.isPressed('v') || this.inputManager.isPressed('V')) {
+            if (!this._vKeyPressed) {
+                if (this.vehicle.setFireRate) {
+                    const currentRPM = this.vehicle.cannonRPM;
+                    const nextRPM = currentRPM === CONSTANTS.WEAPON.M61.RPM_HIGH ?
+                        CONSTANTS.WEAPON.M61.RPM_LOW : CONSTANTS.WEAPON.M61.RPM_HIGH;
+                    this.vehicle.setFireRate(nextRPM);
+                    this.uiManager.showFlightNotification(`CAN RPM: ${nextRPM}`, 1000);
+                }
+                this._vKeyPressed = true;
+            }
+        } else {
+            this._vKeyPressed = false;
+        }
+
         this.uiManager.updateHealthBar(this.vehicle.health, this.vehicle.maxHealth);
+
+        // Decay Juice
+        if (this.cameraShake > 0) {
+            this.cameraShake *= 0.9; // Decay over time
+            if (this.cameraShake < 0.001) this.cameraShake = 0;
+        }
 
         this.sceneManager.render();
 
@@ -121,6 +157,10 @@ export class Game {
         else if (velocity < 0.5) this._lastDriveState = 'N';
 
         return this._lastDriveState;
+    }
+
+    applyRecoil(intensity) {
+        this.cameraShake = Math.min(0.5, this.cameraShake + intensity);
     }
 
     updatePhysics() {
@@ -271,6 +311,14 @@ export class Game {
             const offset = CONSTANTS.CAMERA.INITIAL_OFFSET.clone();
             const targetPos = chassisMesh.position.clone().add(offset.applyQuaternion(chassisMesh.quaternion));
             this.currentCameraPosition.copy(targetPos);
+
+            // Apply Shake
+            if (this.cameraShake > 0) {
+                this.currentCameraPosition.x += (Math.random() - 0.5) * this.cameraShake;
+                this.currentCameraPosition.y += (Math.random() - 0.5) * this.cameraShake;
+                this.currentCameraPosition.z += (Math.random() - 0.5) * this.cameraShake;
+            }
+
             this.camera.position.copy(this.currentCameraPosition);
 
             // Look at right side? Original: "new THREE.Vector3(1, 0, 0)" rotated.
@@ -296,6 +344,14 @@ export class Game {
             const offset = (this.vehicle.cameraOffset || CONSTANTS.CAMERA.FIRST_PERSON_OFFSET).clone();
             offset.applyQuaternion(chassisMesh.quaternion);
             this.currentCameraPosition.copy(chassisMesh.position).add(offset);
+
+            // Apply Shake
+            if (this.cameraShake > 0) {
+                this.currentCameraPosition.x += (Math.random() - 0.5) * this.cameraShake;
+                this.currentCameraPosition.y += (Math.random() - 0.5) * this.cameraShake;
+                this.currentCameraPosition.z += (Math.random() - 0.5) * this.cameraShake;
+            }
+
             this.camera.position.copy(this.currentCameraPosition);
 
             const pitch = this.inputManager.cameraPitchAngle || 0;
