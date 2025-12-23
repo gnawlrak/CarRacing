@@ -8,7 +8,7 @@ export class FixedWing {
         this.chassisBody = null;
         this.chassisMesh = null;
         this.type = 'FixedWing';
-        this.cameraOffset = new THREE.Vector3(2.5, 0.8, 0);
+        this.cameraOffset = new THREE.Vector3(0.8, 0.25, 0); // Moved forward and lower for better pilot perspective
         this.throttle = 0;
         this.afterburner = false;
         this.gearDown = true;
@@ -17,6 +17,8 @@ export class FixedWing {
         this.vehicle = null; // RaycastVehicle
         this.wheelMeshes = [];
         this.airbrakeMeshes = [];
+        this.maxHealth = CONSTANTS.HEALTH.AIRCRAFT_MAX_HEALTH;
+        this.health = this.maxHealth;
     }
 
     init() {
@@ -160,6 +162,27 @@ export class FixedWing {
 
         scene.add(this.chassisMesh);
         world.addBody(this.chassisBody);
+
+        // Damage Listener
+        this.chassisBody.addEventListener('collide', (event) => {
+            const impulse = event.contact.getImpactVelocityAlongNormal();
+            const impactForce = Math.abs(impulse) * this.chassisBody.mass;
+
+            // Planes are fragile! Lower threshold and higher damage ratio
+            const threshold = CONSTANTS.HEALTH.COLLISION_DAMAGE_THRESHOLD * 0.5;
+            if (impactForce > threshold) {
+                const damage = (impactForce - threshold) * CONSTANTS.HEALTH.IMPACT_DAMAGE_RATIO * 3.0; // 3x damage vs cars
+                this.takeDamage(damage);
+            }
+        });
+    }
+
+    takeDamage(amount) {
+        this.health = Math.max(0, this.health - amount);
+        if (this.health <= 0) {
+            this.game.uiManager.showFlightNotification("AIRCRAFT DESTROYED", 2000);
+            setTimeout(() => this.reset(), 1000);
+        }
     }
 
     updateSystemsVisuals() {
@@ -195,6 +218,11 @@ export class FixedWing {
             this.wheelMeshes[index].position.copy(t.position);
             this.wheelMeshes[index].quaternion.copy(t.quaternion);
         });
+
+        // Afterburner Visual
+        if (this.flameMesh) {
+            this.flameMesh.visible = this.afterburner;
+        }
     }
 
     reset() {
@@ -208,6 +236,7 @@ export class FixedWing {
         this.chassisBody.velocity.copy(forward.scale(speedMs));
 
         this.chassisBody.wakeUp();
+        this.health = this.maxHealth;
     }
 
     straighten() {
@@ -238,6 +267,7 @@ export class FixedWing {
         }
 
         this.chassisBody.wakeUp();
+        this.health = this.maxHealth;
         this.provideTempCollisionProtection(null, 3000);
     }
 

@@ -47,9 +47,11 @@ export const CONSTANTS = {
         AERO_DAMPING: 2.0, // High damping for "crispy" feel
         PITCH_SENSITIVITY: 6000,
         ROLL_SENSITIVITY: 7000,
-        YAW_SENSITIVITY: 2500,
-        MAX_THRUST: 8000, // Increased for better TWR (approx 1.6 max)
-        THROTTLE_STEP: 0.02, // Faster response
+        YAW_SENSITIVITY: 1200, // Reduced for air
+        GROUND_YAW_SENSITIVITY: 6000, // Increased for ground taxi
+        MAX_THRUST: 8000,
+        REVERSE_THRUST_MAGNITUDE: 3000,
+        THROTTLE_STEP: 0.02,
         STALL_SPEED_MS: 18.9, // 68 km/h
         CRUISE_SPEED_MS: 100.3, // 361 km/h
         MAX_SPEED_MS: 111.1, // 400 km/h
@@ -60,7 +62,7 @@ export const CONSTANTS = {
         GEAR_DRAG: 0.05,
         AIRBRAKE_DRAG: 0.15,
         ROLLING_FRICTION: 0.01,
-        BRAKE_FORCE: 10000000, // Matching car brake force
+        BRAKE_FORCE: 2500, // Force applied to wheels
 
         // Physical Gear (RaycastVehicle)
         GEAR: {
@@ -68,12 +70,20 @@ export const CONSTANTS = {
             SUSPENSION_REST_LENGTH: 0.5,
             DAMPING_RELAXATION: 2.5,
             DAMPING_COMPRESSION: 2.5,
-            FRICTION_SLIP: 4.0, // High friction for "lockup" feel
+            FRICTION_SLIP: 1.5,
             ROLL_INFLUENCE: 0.01,
             MAX_SUSPENSION_FORCE: 100000,
             MAX_SUSPENSION_TRAVEL: 0.4,
             WHEEL_RADIUS: 0.3
         }
+    },
+
+    // Health System
+    HEALTH: {
+        VEHICLE_MAX_HEALTH: 200,
+        AIRCRAFT_MAX_HEALTH: 100,
+        COLLISION_DAMAGE_THRESHOLD: 8000, // Significant impact needed (>28 km/h for car)
+        IMPACT_DAMAGE_RATIO: 0.002 // Much lower damage per impulse
     },
 
     // Debug

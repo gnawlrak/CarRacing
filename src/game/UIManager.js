@@ -7,6 +7,8 @@ export class UIManager {
         this.gearDisplay = null;
         this.speedValue = null;
         this.speedIndicator = null;
+        this.healthBar = null;
+        this.healthFill = null;
     }
 
     createSpeedometer() {
@@ -88,6 +90,70 @@ export class UIManager {
 
         // Disable context menu globally as in original
         document.addEventListener('contextmenu', event => event.preventDefault());
+
+        this.createHealthBar();
+    }
+
+    createHealthBar() {
+        const container = document.createElement('div');
+        container.id = 'health-container';
+        container.style.cssText = `
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 300px;
+            height: 20px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 10px;
+            overflow: hidden;
+            z-index: 1000;
+        `;
+
+        this.healthFill = document.createElement('div');
+        this.healthFill.id = 'health-fill';
+        this.healthFill.style.cssText = `
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, #ff4444 0%, #44ff44 100%);
+            transition: width 0.3s ease-out;
+            transform-origin: left;
+        `;
+
+        const healthLabel = document.createElement('div');
+        healthLabel.textContent = 'CONDITION';
+        healthLabel.style.cssText = `
+            position: absolute;
+            top: -20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            font-size: 12px;
+            font-family: Arial, sans-serif;
+            text-shadow: 1px 1px 2px black;
+            letter-spacing: 2px;
+        `;
+
+        container.appendChild(this.healthFill);
+        container.appendChild(healthLabel);
+        document.body.appendChild(container);
+        this.healthBar = container;
+    }
+
+    updateHealthBar(current, max) {
+        if (!this.healthFill) return;
+        const percentage = Math.max(0, (current / max) * 100);
+        this.healthFill.style.width = `${percentage}%`;
+
+        // Color shift based on health
+        if (percentage < 30) {
+            this.healthFill.style.background = '#ff4444';
+        } else if (percentage < 60) {
+            this.healthFill.style.background = '#ffff44';
+        } else {
+            this.healthFill.style.background = 'linear-gradient(90deg, #ff4444 0%, #44ff44 100%)';
+        }
     }
 
     createSettingsMenu(onVehicleChange) {

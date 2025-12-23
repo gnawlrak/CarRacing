@@ -10,6 +10,8 @@ export class Vehicle {
         this.chassisMesh = null;
         this.wheelMeshes = [];
         this.currentCollisionProtection = null;
+        this.maxHealth = CONSTANTS.HEALTH.VEHICLE_MAX_HEALTH;
+        this.health = this.maxHealth;
     }
 
     init() {
@@ -130,6 +132,25 @@ export class Vehicle {
             this.wheelMeshes.push(wheelGroup);
             scene.add(wheelGroup);
         });
+
+        // Damage Listener
+        this.chassisBody.addEventListener('collide', (event) => {
+            const impulse = event.contact.getImpactVelocityAlongNormal();
+            // CANNON impulse is mass * velocity change
+            const impactForce = Math.abs(impulse) * this.chassisBody.mass;
+            if (impactForce > CONSTANTS.HEALTH.COLLISION_DAMAGE_THRESHOLD) {
+                const damage = (impactForce - CONSTANTS.HEALTH.COLLISION_DAMAGE_THRESHOLD) * CONSTANTS.HEALTH.IMPACT_DAMAGE_RATIO;
+                this.takeDamage(damage);
+            }
+        });
+    }
+
+    takeDamage(amount) {
+        this.health = Math.max(0, this.health - amount);
+        if (this.health <= 0) {
+            this.game.uiManager.showFlightNotification("VEHICLE DESTROYED", 2000);
+            setTimeout(() => this.reset(), 1000);
+        }
     }
 
     update() {
@@ -175,7 +196,7 @@ export class Vehicle {
         }
 
         this.chassisBody.wakeUp();
-
+        this.health = this.maxHealth;
         this.provideTempCollisionProtection(null, 3000);
     }
 
@@ -201,7 +222,7 @@ export class Vehicle {
         }
 
         this.chassisBody.wakeUp();
-
+        this.health = this.maxHealth;
         this.provideTempCollisionProtection(null, 3000);
     }
 

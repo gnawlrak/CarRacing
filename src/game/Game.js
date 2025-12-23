@@ -92,6 +92,8 @@ export class Game {
             this.isBoosting
         );
 
+        this.uiManager.updateHealthBar(this.vehicle.health, this.vehicle.maxHealth);
+
         this.sceneManager.render();
 
         // Sync position to server
@@ -302,7 +304,7 @@ export class Game {
             lookAtOffset.y = Math.sin(pitch);
             lookAtOffset.normalize();
 
-            this.currentCameraLookAt.copy(chassisMesh.position).add(lookAtOffset);
+            this.currentCameraLookAt.copy(this.currentCameraPosition).add(lookAtOffset);
 
             // Original: camera.quaternion.copy(chassisMesh.quaternion); camera.rotateY(Math.PI/2);
             // But we can just lookAt.

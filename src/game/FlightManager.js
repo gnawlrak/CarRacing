@@ -85,11 +85,8 @@ export class FlightManager {
                 this.hPressed = false;
             }
 
-            // Brakes (Car style: Space/B/S on ground)
-            vehicle.braking = (keys.b || keys.B || keys.Space || (onGround && (keys.s || keys.S)));
-            if (vehicle.braking) {
-                this.game.uiManager.showFlightNotification("BRAKING", 100);
-            }
+            // Brakes (Hold B)
+            vehicle.braking = (keys.b || keys.B);
 
             // --- Extra Drag ---
             let extraDragCoeff = 0;
@@ -104,6 +101,8 @@ export class FlightManager {
 
             // --- Turbojet & Performance Limits ---
             const altitude = chassisBody.position.y;
+            let reversing = false;
+
             if (keys.ArrowUp) {
                 if (this.game.vehicle.throttle >= 1.0) {
                     this.game.vehicle.afterburner = true;
@@ -112,14 +111,18 @@ export class FlightManager {
                     this.game.vehicle.afterburner = false;
                 }
             } else if (keys.ArrowDown) {
-                this.game.vehicle.throttle = Math.max(0, this.game.vehicle.throttle - CONSTANTS.AERO.THROTTLE_STEP);
-                this.game.vehicle.afterburner = false;
+                if (this.game.vehicle.throttle > 0) {
+                    this.game.vehicle.throttle = Math.max(0, this.game.vehicle.throttle - CONSTANTS.AERO.THROTTLE_STEP);
+                    this.game.vehicle.afterburner = false;
+                } else if (onGround) {
+                    reversing = true;
+                }
             } else {
                 this.game.vehicle.afterburner = false;
             }
 
-            if (this.game.vehicle.flameMesh) {
-                this.game.vehicle.flameMesh.visible = this.game.vehicle.afterburner;
+            if (reversing) {
+                this.game.uiManager.showFlightNotification("REVERSE THRUST", 100);
             }
 
             let thrustMultiplier = 1.0;
@@ -130,7 +133,12 @@ export class FlightManager {
             const milPowerRatio = 0.85; // Increased for better non-AB takeoff
             const abMultiplier = 2.0;
             const currentPower = this.game.vehicle.afterburner ? abMultiplier : (this.game.vehicle.throttle * milPowerRatio);
-            const thrustMagnitude = currentPower * CONSTANTS.AERO.MAX_THRUST * thrustMultiplier;
+
+            let thrustMagnitude = currentPower * CONSTANTS.AERO.MAX_THRUST * thrustMultiplier;
+            if (reversing) {
+                thrustMagnitude = -CONSTANTS.AERO.REVERSE_THRUST_MAGNITUDE;
+            }
+
             const thrustForce = new CANNON.Vec3(thrustMagnitude, 0, 0);
 
             if (speed > CONSTANTS.AERO.MAX_SPEED_MS && vx > 0) {
@@ -171,14 +179,17 @@ export class FlightManager {
             if (keys.s || keys.S) torque.z -= CONSTANTS.AERO.PITCH_SENSITIVITY * 0.6; // Reduced -G sensitivity
             if (keys.a || keys.A) torque.x -= CONSTANTS.AERO.ROLL_SENSITIVITY;
             if (keys.d || keys.D) torque.x += CONSTANTS.AERO.ROLL_SENSITIVITY;
-            if (keys.q || keys.Q) torque.y += CONSTANTS.AERO.YAW_SENSITIVITY;
-            if (keys.e || keys.E) torque.y -= CONSTANTS.AERO.YAW_SENSITIVITY;
+
+            // Yaw logic (Dual-key support and Ground/Air sensitivity split)
+            const yawSensitivity = onGround ? CONSTANTS.AERO.GROUND_YAW_SENSITIVITY : CONSTANTS.AERO.YAW_SENSITIVITY;
+            if (keys.q || keys.Q || keys.ArrowLeft) torque.y += yawSensitivity;
+            if (keys.e || keys.E || keys.ArrowRight) torque.y -= yawSensitivity;
 
             // --- Ground Control Restriction ---
-            // If on ground, disable roll and pitch torques to prevent tipping/flipping
+            // If on ground, disable roll torque but allow pitch to enable takeoff rotation
             if (onGround) {
                 torque.x = 0;
-                torque.z = 0;
+                // Leave torque.z (pitch) enabled for rotation
             }
 
             const worldUp = new CANNON.Vec3(0, 1, 0);
