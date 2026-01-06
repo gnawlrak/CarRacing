@@ -25,7 +25,7 @@ const SPAWN_RADIUS = 20;
 function generateRandomSpawnPoint() {
     const angle = Math.random() * Math.PI * 2;
     const radius = Math.random() * SPAWN_RADIUS;
-    
+
     return {
         x: SPAWN_CENTER.x + radius * Math.cos(angle),
         y: SPAWN_CENTER.y,
@@ -40,16 +40,16 @@ io.on('connection', socket => {
 
     socket.on('join', playerId => {
         console.log('Player joining:', playerId);
-        
-        if(players.size >= 5) {
+
+        if (players.size >= 5) {
             console.log('Game full, rejecting player:', playerId);
             socket.emit('join_failed', '游戏人数已满');
             return;
         }
-        
+
         // 生成随机出生点
         const spawnPosition = generateRandomSpawnPoint();
-        
+
         // 存储玩家信息
         players.set(socket.id, {
             id: playerId,
@@ -57,12 +57,12 @@ io.on('connection', socket => {
             position: spawnPosition,
             quaternion: { x: 0, y: 0, z: 0, w: 1 }
         });
-        
+
         // 发送现有玩家列表给新玩家
         const playersList = Array.from(players.values());
         console.log('Sending players list:', playersList);
         socket.emit('players', playersList);
-        
+
         // 通知其他玩家有新玩家加入
         socket.broadcast.emit('player_joined', {
             id: playerId,
@@ -74,7 +74,7 @@ io.on('connection', socket => {
 
     socket.on('update_position', data => {
         const player = players.get(socket.id);
-        if(player) {
+        if (player) {
             player.position = data.position;
             player.quaternion = data.quaternion;
 
@@ -88,7 +88,7 @@ io.on('connection', socket => {
 
             const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
             // 假设更新频率为 60 FPS (可以根据实际情况调整)
-            const timeStep = 1/60;
+            const timeStep = 1 / 60;
             const speed = distance / timeStep;
             const speedKmh = speed * 3.6;
 
@@ -114,10 +114,37 @@ io.on('connection', socket => {
         }
     });
 
+    socket.on('weapon_fire', data => {
+        const player = players.get(socket.id);
+        if (player) {
+            console.log(`Player ${player.id} fired weapon`);
+            socket.broadcast.emit('player_fired', {
+                playerId: player.id,
+                socketId: socket.id,
+                position: data.position,
+                quaternion: data.quaternion,
+                rpm: data.rpm
+            });
+        }
+    });
+
+    socket.on('player_hit', data => {
+        // data: { targetSocketId, damage }
+        const target = players.get(data.targetSocketId);
+        const attacker = players.get(socket.id);
+        if (target) {
+            console.log(`Player ${attacker ? attacker.id : 'Unknown'} hit Player ${target.id} for ${data.damage} damage`);
+            io.to(data.targetSocketId).emit('take_damage', {
+                damage: data.damage,
+                attackerId: socket.id
+            });
+        }
+    });
+
     socket.on('disconnect', () => {
         console.log('Client disconnected:', socket.id);
         const player = players.get(socket.id);
-        if(player) {
+        if (player) {
             players.delete(socket.id);
             io.emit('player_left', socket.id);
         }

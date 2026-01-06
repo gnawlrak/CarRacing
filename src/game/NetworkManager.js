@@ -44,6 +44,15 @@ export class NetworkManager {
             this.game.updateRemotePlayer(data);
         });
 
+        this.socket.on('player_fired', data => {
+            if (data.socketId === this.socket.id) return;
+            this.game.onRemoteFire(data);
+        });
+
+        this.socket.on('take_damage', data => {
+            this.game.onLocalPlayerDamaged(data);
+        });
+
         this.socket.on('join_failed', message => {
             this.game.uiManager.setJoinErrorMessage(message);
         });
@@ -81,6 +90,25 @@ export class NetworkManager {
             this.socket.emit('update_position', {
                 position: position,
                 quaternion: quaternion
+            });
+        }
+    }
+
+    sendFireEvent(position, quaternion, rpm) {
+        if (this.socket) {
+            this.socket.emit('weapon_fire', {
+                position: position,
+                quaternion: quaternion,
+                rpm: rpm
+            });
+        }
+    }
+
+    sendHitEvent(targetSocketId, damage) {
+        if (this.socket) {
+            this.socket.emit('player_hit', {
+                targetSocketId: targetSocketId,
+                damage: damage
             });
         }
     }

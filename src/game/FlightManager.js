@@ -183,7 +183,15 @@ export class FlightManager {
             if (keys.d || keys.D) torque.x += CONSTANTS.AERO.ROLL_SENSITIVITY;
 
             // Yaw logic (Dual-key support and Ground/Air sensitivity split)
-            const yawSensitivity = onGround ? CONSTANTS.AERO.GROUND_YAW_SENSITIVITY : CONSTANTS.AERO.YAW_SENSITIVITY;
+            let yawSensitivity = onGround ? CONSTANTS.AERO.GROUND_YAW_SENSITIVITY : CONSTANTS.AERO.YAW_SENSITIVITY;
+
+            // Ground restriction: Scale yaw force by speed to prevent zero-speed rotation
+            if (onGround) {
+                const minSteeringSpeed = 1.0; // m/s
+                const steeringScale = Math.min(1.0, speed / 5.0);
+                yawSensitivity *= steeringScale;
+            }
+
             if (keys.q || keys.Q || keys.ArrowLeft) torque.y += yawSensitivity;
             if (keys.e || keys.E || keys.ArrowRight) torque.y -= yawSensitivity;
 
@@ -285,43 +293,121 @@ export class FlightManager {
         if (keys.Num8 || keys.ArrowUp) force.y += config.FORCE * 1.5;
         if (keys.Num2 || keys.ArrowDown) force.y -= config.FORCE * 1.5;
 
-        // 4. Rotation (QE for Yaw)
-        const yawSens = CONSTANTS.HOVER.YAW_SENSITIVITY || 8000;
-        let qeWorldYaw = 0;
-        if (keys.q || keys.Q) qeWorldYaw += yawSens;
-        if (keys.e || keys.E) qeWorldYaw -= yawSens;
+        // 4. Rotation (Quaternion "Shortest Path" Control)
+        // Target Orientation
+        const yaw = this.game.inputManager.cameraYawAngle || 0;
+        const pitch = this.game.inputManager.cameraPitchAngle || 0;
 
-        // Mouse influence (Simulated as stick input)
-        const pitchLimit = Math.PI / 4;
-        const currentPitch = Math.asin(localForward.y);
-        // We can just apply torque based on Mouse movement if available, 
-        // but here we use the cameraPitchAngle as a target or just stick to keys.
-        // Let's use cameraPitchAngle for nose pointing as user requested.
-        const targetPitch = this.game.inputManager.cameraPitchAngle || 0;
-        const pitchError = targetPitch - currentPitch;
-        torque.z += pitchError * CONSTANTS.AERO.PITCH_SENSITIVITY * 0.5;
+        // Construct Target Quaternion (order: Yaw around Y, then Pitch around Local X)
+        // NOTE: In our system, Pitch is around Z or X depending on model. 
+        // Based on InputManager, Pitch is clamped. 
+        // Let's assume standard aircraft: Pitch = Tilt nose up/down (Local Z in our code usually? No, let's check).
+        // FixedWing.js: chassisShape is Box(4, 0.5, 1.2). X is Forward (implied by velocity set to 1,0,0).
+        // If X is Forward, Y is Up, Z is Right (or Left).
+        // Pitching up means rotating around Z axis.
+        // Yawing means rotating around Y axis.
 
-        // 5. Auto-Stabilization (Leveling)
-        if (!keys.w && !keys.s && !keys.a && !keys.d) {
-            // Level Roll
-            const rollError = localRight.y;
-            torque.x -= rollError * CONSTANTS.AERO.ROLL_STABILIZATION_FORCE * 0.5;
+        const targetQuat = new CANNON.Quaternion();
+        targetQuat.setFromEuler(0, yaw, 0, 'YXZ'); // Yaw first
 
-            // Level Pitch if no vertical movement? No, follow mouse.
+        // Add Pitch
+        const pitchQuat = new CANNON.Quaternion();
+        pitchQuat.setFromEuler(0, 0, pitch); // Pitch around Z
+        targetQuat.mult(pitchQuat, targetQuat);
+
+        // Current Orientation
+        const currentQuat = chassisBody.quaternion;
+
+        // Error Quaternion (Rotation needed to go from Current to Target)
+        // error = current^-1 * target
+        const errorQuat = currentQuat.inverse().mult(targetQuat);
+
+        // Establish "Shortest Path"
+        // If w < 0, we are taking the long way around. Invert to take short way.
+        if (errorQuat.w < 0) {
+            errorQuat.x *= -1;
+            errorQuat.y *= -1;
+            errorQuat.z *= -1;
+            errorQuat.w *= -1;
         }
 
-        // Apply
+        // Convert Error Quaternion to Torque (Proportional Control)
+        // Small angle approximation: sin(theta/2) ~= theta/2. x,y,z components are proprotional to axis * angle.
+        const kp = CONSTANTS.HOVER.STABILIZATION_P || 2000; // Stiffness
+        const kd = CONSTANTS.HOVER.STABILIZATION_D || 200;  // Damping
+
+        // Torque in Local Body Space (because errorQuat is in local space relative to current)
+        // Wait: current^-1 * target gives rotation in local frame?
+        // Let R_c be current, R_t be target. R_c * R_error = R_t.
+        // Yes, R_error is applied locally to R_c to get R_t.
+
+        const torqueLocal = new CANNON.Vec3(
+            errorQuat.x * kp,
+            errorQuat.y * kp,
+            errorQuat.z * kp
+        );
+
+        // Add Damping (Local Angular Velocity)
+        const localAngVel = new CANNON.Vec3();
+        currentQuat.inverse().vmult(chassisBody.angularVelocity, localAngVel);
+
+        torqueLocal.x -= localAngVel.x * kd;
+        torqueLocal.y -= localAngVel.y * kd;
+        torqueLocal.z -= localAngVel.z * kd;
+
+        // Manual Yaw Override (Q/E) - Add to target or Add torque?
+        // If we want manual override to shift the "Target Yaw", we should update InputManager yaw.
+        // But InputManager handles keys.
+        // Let's just let the InputManager handle Q/E to update cameraYawAngle.
+        // Check InputManager keys: It updates cameraYawAngle?
+        // No, current InputManager only updates cameraYawAngle via ONMOUSEMOVE.
+        // We should probably add Q/E support to InputManager or handle it here by modifying the "Yaw" variable before constructing quat.
+
+        const yawSpeed = 0.02;
+        if (keys.q || keys.Q) this.game.inputManager.cameraYawAngle += yawSpeed;
+        if (keys.e || keys.E) this.game.inputManager.cameraYawAngle -= yawSpeed;
+
+        // Apply Torque
+        // torqueLocal is in Local space. Convert to World for applyTorque?
+        // chassisBody.applyTorque takes World Torque.
+
+        // Ground Restriction for Hover Mode:
+        // We also want to prevent rotating in place on the ground in hover mode unless there's some lift/movement
+        let wheelsOnGround = 0;
+        const vhc = this.game.vehicle;
+        if (vhc.vehicle) {
+            vhc.vehicle.wheelInfos.forEach((wheel) => {
+                if (wheel.raycastResult.body) wheelsOnGround++;
+            });
+        }
+        const onGnd = wheelsOnGround > 0;
+        const curSpeed = chassisBody.velocity.length();
+
+        if (onGnd) {
+            const steeringScale = Math.min(1.0, curSpeed / 2.0); // Allow more authority in hover at low speed than normal
+            torqueLocal.x *= steeringScale;
+            torqueLocal.y *= steeringScale;
+            torqueLocal.z *= steeringScale;
+        }
+
+        const torqueWorld = new CANNON.Vec3();
+        currentQuat.vmult(torqueLocal, torqueWorld);
+
+        chassisBody.applyTorque(torqueWorld);
+
+        // Apply Forces (WASD + Lift) logic remains same but remove old torque parts
+        if (keys.w || keys.W) force.addScaledVector(config.FORCE, localForward, force);
+        if (keys.s || keys.S) force.addScaledVector(-config.FORCE, localForward, force);
+        if (keys.a || keys.A) force.addScaledVector(config.FORCE, localRight, force);
+        if (keys.d || keys.D) force.addScaledVector(-config.FORCE, localRight, force);
+
+        // Vertical
+        if (keys.Num8 || keys.ArrowUp) force.y += config.FORCE * 1.5;
+        if (keys.Num2 || keys.ArrowDown) force.y -= config.FORCE * 1.5;
+
         chassisBody.applyForce(force, new CANNON.Vec3(0, 0, 0));
-        const worldTorque = new CANNON.Vec3();
-        chassisBody.quaternion.vmult(torque, worldTorque);
 
-        // Add QE rotation in world space to ensure pure yaw
-        worldTorque.y += qeWorldYaw;
-
-        chassisBody.applyTorque(worldTorque);
-
-        // Apply heavy damping manually to dampen noise
+        // Heavy linear damping for hover stability
         chassisBody.velocity.scale(config.DAMPING, chassisBody.velocity);
-        chassisBody.angularVelocity.scale(config.DAMPING, chassisBody.angularVelocity);
     }
 }

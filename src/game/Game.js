@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import * as CANNON from 'cannon-es';
 import { SceneManager } from './SceneManager.js';
 import { PhysicsWorld } from './PhysicsWorld.js';
 import { InputManager } from './InputManager.js';
@@ -65,6 +66,7 @@ export class Game {
         this.uiManager.createFlightHUD(this);
         this.uiManager.createSettingsMenu((type) => this.switchVehicle(type));
         this.networkManager.init();
+        this.uiManager.createReticle();
 
         // Bind Input Actions
         this.inputManager.onReset = () => this.vehicle.reset();
@@ -298,6 +300,13 @@ export class Game {
 
         this.vehicle.init();
 
+        // Sync InputManager yaw with vehicle initial yaw to prevent snapping
+        if (this.vehicle.chassisBody) {
+            const forward = new CANNON.Vec3(1, 0, 0);
+            this.vehicle.chassisBody.quaternion.vmult(forward, forward);
+            this.inputManager.cameraYawAngle = Math.atan2(forward.z, forward.x);
+        }
+
         // Re-attach player label if needed? (optional for now)
         // this.createPlayerLabelForSelf(this.networkManager.id);
     }
@@ -307,43 +316,129 @@ export class Game {
         if (!chassisMesh) return;
 
         if (!this.isFirstPersonView) {
-            // Third Person
-            const offset = CONSTANTS.CAMERA.INITIAL_OFFSET.clone();
-            const targetPos = chassisMesh.position.clone().add(offset.applyQuaternion(chassisMesh.quaternion));
-            this.currentCameraPosition.copy(targetPos);
+            // Third Person (Distinguish between Hover Mode and Normal Mode)
+            if (this.vehicle.hoverMode) {
+                // --- HOVER MODE: MOUSE AIM (WAR THUNDER STYLE) ---
+                const yaw = this.inputManager.cameraYawAngle || 0;
+                const pitch = this.inputManager.cameraPitchAngle || 0;
 
-            // Apply Shake
-            if (this.cameraShake > 0) {
-                this.currentCameraPosition.x += (Math.random() - 0.5) * this.cameraShake;
-                this.currentCameraPosition.y += (Math.random() - 0.5) * this.cameraShake;
-                this.currentCameraPosition.z += (Math.random() - 0.5) * this.cameraShake;
+                // 1. Calculate Aim Direction (Where the mouse is pointing in world)
+                const aimDir = new THREE.Vector3(1, 0, 0); // Forward X+
+                aimDir.applyAxisAngle(new THREE.Vector3(0, 0, 1), pitch); // Pitch
+                aimDir.applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);   // Yaw
+
+                // 2. Camera follows VEHICLE, not aim direction
+                // Standard chase camera
+                const chaseDist = 12;
+                const chaseHeight = 4;
+
+                // Get vehicle forward/velocity direction for smooth following? 
+                // Or just behind the vehicle's actual orientation?
+                // Let's use vehicle orientation for the camera alignment effectively
+                const vehicleForward = new THREE.Vector3(1, 0, 0).applyQuaternion(chassisMesh.quaternion);
+
+                // We actually want the camera to be somewhat "free" or follow the vehicle loosely.
+                // Simple implementation: Behind the vehicle's position, but looking at vehicle.
+                // Let's bias the camera behind the AIM direction slightly so you can see where you are turning?
+                // No, War Thunder style: Camera looks at Plane, Plane tries to look at Cursor.
+                // Actually, in WT, Camera looks in the direction of the Cursor, and Plane tries to align.
+                // So Camera Rotation is driven by Mouse (Input Angles).
+
+                // REVISION: Camera Rotation IS the Input Angles. Camera Position trails the plane.
+                // Plane is somewhere in front.
+
+                // Camera Rotation based on Input Angles (Cursor Direction)
+                // We construct a rotation matrix from Yaw/Pitch
+                // Correction for Camera Face (-Z) vs World/Model Forward (+X)
+                // We want Camera to look down +X when Yaw=0.
+                // Camera looks -Z. RotY(-90) -> +X.
+                const camQuat = new THREE.Quaternion();
+                camQuat.setFromEuler(new THREE.Euler(0, yaw - Math.PI / 2, 0, 'YXZ'));
+                // Wait, if we subtract PI/2 from Yaw, we rotate Right? 
+                // -90 deg = Right turn? Yes.
+
+                // Simpler: Construct direction then lookAt?
+                // lookAt is safer.
+
+                // Set Camera Position
+                const camOffset = new THREE.Vector3(-10, 5, 0); // Behind and above
+                const camPos = chassisMesh.position.clone();
+                camPos.add(camOffset.applyQuaternion(chassisMesh.quaternion));
+
+                this.currentCameraPosition.lerp(camPos, 0.1);
+                this.camera.position.copy(this.currentCameraPosition);
+
+                // Look toward the Aim Direction (Absolute)
+                const lookTarget = this.camera.position.clone().add(aimDir.clone().multiplyScalar(100));
+                this.camera.lookAt(lookTarget);
+
+                // Reticle projection depends on this camera setup.
+
+                // Since lookAt works in World Space, and aimDir is World Space, this is ROBUST against coordinate bugs.
+                // We do NOT need to manually set quaternion with offsets if we use lookAt correctly.
+
+                // 3. Project Reticle logic (remains valid as aimDir is derived from Input Yaw which drives Plane)
+
+                // 3. Project Reticle
+                // We have 'aimDir' from input. This is the direction we WANT to fly.
+                // We need to show this direction on screen relative to the camera.
+
+                // Ghost Target Position (Far away in Aim Direction)
+                // Origin should be the Vehicle Position (since we steer the vehicle)
+                const targetPos = chassisMesh.position.clone().add(aimDir.multiplyScalar(1000));
+
+                // Project to Screen
+                const screenPos = targetPos.clone().project(this.camera);
+
+                // Convert (-1 to +1) to (pixels)
+                // x: (screenPos.x * .5 + .5) * width
+                // y: -(screenPos.y * .5 - .5) * height
+
+                const x = (screenPos.x * 0.5 + 0.5) * window.innerWidth;
+                const y = (-(screenPos.y * 0.5) + 0.5) * window.innerHeight;
+
+                // Logic to hide if behind camera?
+                // if (screenPos.z > 1) -> Behind
+                const isVisible = screenPos.z < 1;
+
+                this.uiManager.updateReticle(x, y, isVisible);
+
+            } else {
+                // --- NORMAL FLIGHT: RIGID FOLLOW ---
+                const offset = CONSTANTS.CAMERA.INITIAL_OFFSET.clone();
+                const targetPos = chassisMesh.position.clone().add(offset.applyQuaternion(chassisMesh.quaternion));
+                this.currentCameraPosition.copy(targetPos); // Rigid snap or lerp? Original was snap (copy)
+
+                // Apply Shake
+                if (this.cameraShake > 0) {
+                    this.currentCameraPosition.x += (Math.random() - 0.5) * this.cameraShake;
+                    this.currentCameraPosition.y += (Math.random() - 0.5) * this.cameraShake;
+                    this.currentCameraPosition.z += (Math.random() - 0.5) * this.cameraShake;
+                }
+
+                this.camera.position.copy(this.currentCameraPosition);
+
+                const rightOffset = new THREE.Vector3(1, 0, 0).applyQuaternion(chassisMesh.quaternion);
+
+                // Combined Pitch logic (Camera Angle relative to plane)
+                const pitch = this.inputManager.cameraPitchAngle || 0;
+                // We want to rotate the "LookAt" vector by this pitch?
+                // The Original logic:
+                // const lookAtOffset = rightOffset.clone(); // ?? This implies forward is X?
+                // Yes, X is forward.
+                const forward = new THREE.Vector3(1, 0, 0).applyQuaternion(chassisMesh.quaternion);
+                // Rotate forward by pitch around local Z?
+                // Actually the original code logic was weird: "lookAtOffset.y = Math.sin(pitch)"
+                // This added vertical component to the right offset? No.
+                // Let's stick to standard behavior: Look at Plane Center + forward
+                this.camera.lookAt(chassisMesh.position);
             }
-
-            this.camera.position.copy(this.currentCameraPosition);
-
-            // Look at right side? Original: "new THREE.Vector3(1, 0, 0)" rotated.
-            // Original lines 734+: "new THREE.Vector3(1, 0, 0)"
-            // This means camera looks at the Right of the car?
-            // "const rightOffset = new THREE.Vector3(1, 0, 0);"
-            // "targetLookAt = ... .add(rightOffset)"
-            // Yes, camera looks at a point to the right of the car.
-            // I will keep this style.
-            const rightOffset = new THREE.Vector3(1, 0, 0).applyQuaternion(chassisMesh.quaternion);
-
-            // Pitch logic
-            const pitch = this.inputManager.cameraPitchAngle || 0;
-            const lookAtOffset = rightOffset.clone();
-            lookAtOffset.y = Math.sin(pitch);
-            lookAtOffset.normalize();
-
-            const targetLookAt = chassisMesh.position.clone().add(lookAtOffset);
-            this.currentCameraLookAt.copy(targetLookAt);
-            this.camera.lookAt(this.currentCameraLookAt);
         } else {
             // First Person
+            const chassisQuat = chassisMesh.quaternion;
             const offset = (this.vehicle.cameraOffset || CONSTANTS.CAMERA.FIRST_PERSON_OFFSET).clone();
-            offset.applyQuaternion(chassisMesh.quaternion);
-            this.currentCameraPosition.copy(chassisMesh.position).add(offset);
+            offset.applyQuaternion(chassisQuat);
+            this.currentCameraPosition.copy(chassisMesh.position).add(offset); // No lerp for FPS, instant stick
 
             // Apply Shake
             if (this.cameraShake > 0) {
@@ -351,20 +446,38 @@ export class Game {
                 this.currentCameraPosition.y += (Math.random() - 0.5) * this.cameraShake;
                 this.currentCameraPosition.z += (Math.random() - 0.5) * this.cameraShake;
             }
-
             this.camera.position.copy(this.currentCameraPosition);
 
-            const pitch = this.inputManager.cameraPitchAngle || 0;
-            const rightOffset = new THREE.Vector3(1, 0, 0).applyQuaternion(chassisMesh.quaternion);
-            const lookAtOffset = rightOffset.clone();
-            lookAtOffset.y = Math.sin(pitch);
-            lookAtOffset.normalize();
+            // Orientation Logic
+            // Use lookAt to ensure we face exactly the vehicle's forward (+X)
+            const forward = new THREE.Vector3(1, 0, 0).applyQuaternion(chassisQuat);
+            const up = new THREE.Vector3(0, 1, 0).applyQuaternion(chassisQuat);
 
-            this.currentCameraLookAt.copy(this.currentCameraPosition).add(lookAtOffset);
+            // Set base orientation
+            this.camera.up.copy(up);
+            const lookTarget = this.camera.position.clone().add(forward);
+            this.camera.lookAt(lookTarget);
 
-            // Original: camera.quaternion.copy(chassisMesh.quaternion); camera.rotateY(Math.PI/2);
-            // But we can just lookAt.
-            this.camera.lookAt(this.currentCameraLookAt);
+            // 2. User Requested: Only allow mouse to guide when RIGHT CLICK is held
+            if (this.inputManager.isDragging) {
+                const yaw = this.inputManager.cameraYawAngle || 0;
+                const pitch = this.inputManager.cameraPitchAngle || 0;
+
+                // For FPS free look, rotate camera locally
+                this.camera.rotateOnAxis(new THREE.Vector3(0, 1, 0), yaw);
+                this.camera.rotateOnAxis(new THREE.Vector3(1, 0, 0), pitch);
+            } else {
+                // Auto Return
+                this.inputManager.cameraYawAngle = 0;
+                this.inputManager.cameraPitchAngle = 0;
+            }
+
+            // Note: Since Camera now rolls with Vehicle, the HUD Horizon Logic (rotate(-roll)) MUST match this.
+            // If World is Flat. Vehicle Rolls Right (+90). Camera Rolls Right (+90).
+            // Screen sees Ground on Left, Sky on Right. Horizon is Vertical |
+            // HUD rotates -90 (CCW). Top becomes Left. Line becomes |.
+            // MATCH. 
+            // This confirms that "HUD Reverse" was likely due to Camera NOT rolling.
         }
     }
 
@@ -403,10 +516,21 @@ export class Game {
 
         this.physicsWorld.world.addBody(otherChassisBody);
 
+        // Attach muzzle flash for remote aircraft
+        const scale = CONSTANTS.AERO.SCALE || 0.4;
+        const muzzleFlashGeom = new THREE.ConeGeometry(0.2 * scale, 1.0 * scale, 8);
+        const muzzleFlashMat = new THREE.MeshBasicMaterial({ color: 0xffffaa, transparent: true, opacity: 0.9 });
+        const muzzleFlash = new THREE.Mesh(muzzleFlashGeom, muzzleFlashMat);
+        muzzleFlash.rotation.z = -Math.PI / 2;
+        muzzleFlash.position.set(4.5 * scale, 0, 0);
+        muzzleFlash.visible = false;
+        otherChassisMesh.add(muzzleFlash);
+
         this.otherPlayers.set(data.socketId, {
             mesh: otherChassisMesh,
             body: otherChassisBody,
             label: label,
+            muzzleFlash: muzzleFlash, // Keep reference
             id: data.id,
             socketId: data.socketId
         });
@@ -445,6 +569,54 @@ export class Game {
                     if (player.body) player.body.quaternion.copy(player.mesh.quaternion);
                 }
             }
+        }
+    }
+
+    onLocalPlayerDamaged(data) {
+        if (this.vehicle && this.vehicle.takeDamage) {
+            this.vehicle.takeDamage(data.damage);
+            // Visual feedback could go here
+            this.uiManager.showFlightNotification(`HIT BY WEAPON!`, 500);
+        }
+    }
+
+    onRemoteFire(data) {
+        const player = this.otherPlayers.get(data.socketId);
+        if (player && player.muzzleFlash) {
+            player.muzzleFlash.visible = true;
+            // Temporary hide after a short delay
+            setTimeout(() => { if (player.muzzleFlash) player.muzzleFlash.visible = false; }, 50);
+
+            // Tracer effect for remote player
+            const scale = CONSTANTS.AERO.SCALE || 0.4;
+            const tracerGeom = new THREE.SphereGeometry(0.15, 6, 6);
+            const tracerMat = new THREE.MeshBasicMaterial({ color: 0xffff44 });
+            const tracer = new THREE.Mesh(tracerGeom, tracerMat);
+
+            // Set starting position at muzzle
+            const q = new THREE.Quaternion();
+            player.mesh.getWorldQuaternion(q);
+            const forward = new THREE.Vector3(1, 0, 0).applyQuaternion(q);
+            const muzzlePos = player.mesh.position.clone().add(forward.clone().multiplyScalar(4.5 * scale));
+            tracer.position.copy(muzzlePos);
+
+            this.scene.add(tracer);
+
+            // Basic animation for tracer (simulated)
+            const speed = CONSTANTS.WEAPON.M61.VELOCITY;
+            const startTime = Date.now();
+            const duration = 1000; // 1s life
+
+            const animateTracer = () => {
+                const elapsed = Date.now() - startTime;
+                if (elapsed > duration) {
+                    this.scene.remove(tracer);
+                    return;
+                }
+                tracer.position.add(forward.clone().multiplyScalar(speed * (16 / 1000))); // approx 60fps
+                requestAnimationFrame(animateTracer);
+            };
+            requestAnimationFrame(animateTracer);
         }
     }
 }

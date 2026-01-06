@@ -499,14 +499,17 @@ export class UIManager {
         this.hudAltValue.textContent = altFeet.toString().padStart(5, '0');
 
         // Flight attitude
-        // Order: Y(Yaw), Z(Pitch), X(Roll) for a system where X is forward and Y is up
-        const euler = new THREE.Euler().setFromQuaternion(vehicle.chassisMesh.quaternion, 'YZX');
-        let heading = Math.round((-euler.y * 180 / Math.PI + 360) % 360);
+        // HUD horizon should be level with the real world horizon
+        // We calculate the camera's roll relative to gravity by looking at its "Right" vector
+        const camRight = new THREE.Vector3(1, 0, 0).applyQuaternion(this.game.camera.quaternion);
+        const rollRad = Math.asin(Math.max(-1, Math.min(1, camRight.y)));
+
+        // Pitch/Heading logic stays roughly same but we could improve euler extraction
+        const vehicleEuler = new THREE.Euler().setFromQuaternion(vehicle.chassisMesh.quaternion, 'YZX');
+        let heading = Math.round((-vehicleEuler.y * 180 / Math.PI + 360) % 360);
         this.hudHeading.textContent = heading.toString().padStart(3, '0');
 
-        // Pitch and Roll based on physics axes (Z=Pitch, X=Roll)
-        const pitchDeg = euler.z * 180 / Math.PI;
-        const rollRad = euler.x;
+        const pitchDeg = vehicleEuler.z * 180 / Math.PI;
 
         // Throttle
         const rpm = Math.round(vehicle.throttle * 100);
@@ -515,6 +518,7 @@ export class UIManager {
         // Update Pitch Ladder
         // Each degree is 10px. 
         this.ladderContainer.style.top = `calc(50% + ${pitchDeg * 10}px)`;
+        // Invert rotation to match world horizon tilt
         this.pitchLadder.style.transform = `translate(-50%, -50%) rotate(${rollRad}rad)`;
 
         // Update System Indicators
@@ -560,6 +564,51 @@ export class UIManager {
         sprite.layers.set(1); // Set to layer 1 to exclude from motion blur post-processing
 
         return sprite;
+    }
+
+    createReticle() {
+        const reticle = document.createElement('div');
+        reticle.id = 'aim-reticle';
+        reticle.style.cssText = `
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 20px;
+            height: 20px;
+            border: 2px solid white;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            display: none;
+            z-index: 1001;
+            box-shadow: 0 0 4px black;
+        `;
+
+        const dot = document.createElement('div');
+        dot.style.cssText = `
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 4px;
+            height: 4px;
+            background: white;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+        `;
+        reticle.appendChild(dot);
+        document.body.appendChild(reticle);
+        this.reticle = reticle;
+    }
+
+    updateReticle(x, y, visible) {
+        if (!this.reticle) return;
+        if (!visible) {
+            this.reticle.style.display = 'none';
+            return;
+        }
+        this.reticle.style.display = 'block';
+        this.reticle.style.left = `${x}px`;
+        this.reticle.style.top = `${y}px`;
     }
 
     setJoinErrorMessage(message) {

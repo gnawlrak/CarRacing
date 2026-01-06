@@ -47,11 +47,13 @@ export class InputManager {
         this.onCameraToggle = null;
         this.onFlightToggle = null;
 
-        // Mouse state for camera control
+        // Mouse state for camera/flight control
         this.isDragging = false;
         this.lastMouseX = 0;
-        this.cameraAngle = 0;
-        this.cameraPitchAngle = 90; // Starting pitch
+        this.cameraAngle = 0; // Legacy / Orbit angle
+        this.cameraPitchAngle = 0; // Target Pitch in radians
+        this.cameraYawAngle = 0;   // Target Yaw in radians
+        this.isPointerLocked = false;
 
         this.init();
     }
@@ -64,6 +66,27 @@ export class InputManager {
         document.addEventListener('mousemove', (e) => this.onMouseMove(e));
         document.addEventListener('mouseup', (e) => this.onMouseUp(e));
         document.addEventListener('contextmenu', (e) => e.preventDefault());
+
+        // Pointer Lock API
+        document.addEventListener('pointerlockchange', () => {
+            this.isPointerLocked = document.pointerLockElement === document.body;
+        });
+
+        // Request lock on click
+        document.addEventListener('click', () => {
+            if (!this.isPointerLocked) {
+                const promise = document.body.requestPointerLock();
+                if (promise && promise.catch) {
+                    promise.catch(err => {
+                        if (err.name === 'NotAllowedError' || err.name === 'SecurityError') {
+                            console.warn("Pointer lock request failed:", err.message);
+                        } else {
+                            console.error("Pointer lock error:", err);
+                        }
+                    });
+                }
+            }
+        });
     }
 
     onKeyDown(event) {
@@ -111,42 +134,22 @@ export class InputManager {
     }
 
     onMouseMove(event) {
+        if (this.isPointerLocked) {
+            const deltaY = event.movementY || event.mozMovementY || event.webkitMovementY || 0;
+            this.cameraPitchAngle -= deltaY * 0.002;
+
+            const deltaX = event.movementX || event.mozMovementX || event.webkitMovementX || 0;
+            this.cameraYawAngle -= deltaX * 0.002;
+
+            // Clamp pitch to avoid gimbal lock/weirdness
+            this.cameraPitchAngle = Math.max(-Math.PI / 4, Math.min(Math.PI / 4, this.cameraPitchAngle));
+        }
+
         if (this.isDragging) {
             const deltaX = event.clientX - this.lastMouseX;
             this.cameraAngle -= deltaX * 0.01;
             this.lastMouseX = event.clientX;
         }
-
-        const deltaY = event.movementY || event.mozMovementY || event.webkitMovementY || 0;
-        this.cameraPitchAngle -= deltaY * 0.01;
-
-        // Clamp pitch
-        const maxPitch = Math.PI / 4;
-        const minPitch = -Math.PI / 4; // Should be negative for down looking? Logic in original was weird: Math.max(min, Math.min(max, angle)) 
-        // Original: cameraPitchAngle = Math.max(minPitch, Math.min(maxPitch, cameraPitchAngle)); 
-        // where minPitch = Math.PI/4 and maxPitch = Math.PI/4... wait, let me check original code.
-        // Original line 493: const minPitch = Math.PI / 4; 
-        // Original line 494: cameraPitchAngle = Math.max(minPitch, ...);
-        // This effectively locks it if min and max are same? 
-        // Ah, checked original code again:
-        // 492: const maxPitch = Math.PI / 4;
-        // 493: const minPitch = Math.PI / 4; 
-        // Wait, strictly speakling in original code:
-        // const minPitch = Math.PI / 4;
-        // cameraPitchAngle = Math.max(minPitch, Math.min(maxPitch, cameraPitchAngle));
-        // If both are PI/4, then pitch is locked? 
-        // Let's re-read line 493 from the `view_file` output.
-        // "493: const minPitch = Math.PI / 4;"
-        // Yes, it says minPitch is PI/4. 
-        // "492: const maxPitch = Math.PI / 4;"
-        // If this is true, the camera pitch was BUGGED or locked in the original code? 
-        // "cameraPitchAngle -= deltaY * 0.01" happens before clamping.
-        // But the clamping forces it to PI/4 IMMEDIATELY? 
-        // Wait, maybe I misread? 
-        // Let's assume standard behavior for now but I should check if I should fix it or keep it "bugged".
-        // Use standard pitch limits for now: -PI/4 to PI/4.
-
-        this.cameraPitchAngle = Math.max(-Math.PI / 4, Math.min(Math.PI / 4, this.cameraPitchAngle));
     }
 
     onMouseUp(event) {

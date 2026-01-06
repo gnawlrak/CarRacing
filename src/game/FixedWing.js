@@ -268,24 +268,65 @@ export class FixedWing {
 
     updateProjectiles() {
         const dt = 1 / 60;
+        const hitRadius = (CONSTANTS.AERO.SCALE || 0.4) * 12; // Radius ~5 units
+
         for (let i = this.projectiles.length - 1; i >= 0; i--) {
             const p = this.projectiles[i];
             p.life -= dt;
+
             if (p.life <= 0) {
                 this.game.scene.remove(p.mesh);
                 this.projectiles.splice(i, 1);
                 continue;
             }
-            // Move bullet
-            p.mesh.position.addScaledVector(p.velocity, dt);
 
-            // Basic ground collision for bullets
-            if (p.mesh.position.y < 0) {
-                this.createImpactEffect(p.mesh.position);
+            // Continuous Hit Detection using Line Segment
+            const startPos = p.mesh.position.clone();
+            const deltaPos = p.velocity.clone().multiplyScalar(dt);
+            const endPos = startPos.clone().add(deltaPos);
+            const bulletLine = new THREE.Line3(startPos, endPos);
+            const closestPoint = new THREE.Vector3();
+
+            // 1. Move Bullet
+            p.mesh.position.copy(endPos);
+
+            // 2. Ground Collision
+            if (endPos.y < 0) {
+                // Approximate ground hit point
+                const t = startPos.y / (startPos.y - endPos.y);
+                const groundHit = new THREE.Vector3().lerpVectors(startPos, endPos, t);
+                this.createImpactEffect(groundHit);
                 this.game.scene.remove(p.mesh);
                 this.projectiles.splice(i, 1);
                 continue;
             }
+
+            // 3. Player Hit Detection
+            let hasHitPlayer = false;
+            for (const [socketId, otherPlayer] of this.game.otherPlayers) {
+                if (otherPlayer.mesh && !p.hasHit) {
+                    bulletLine.closestPointToPoint(otherPlayer.mesh.position, true, closestPoint);
+                    const dist = closestPoint.distanceTo(otherPlayer.mesh.position);
+
+                    if (dist < hitRadius) {
+                        p.hasHit = true;
+                        hasHitPlayer = true;
+
+                        // Notify Network
+                        if (this.game.networkManager) {
+                            this.game.networkManager.sendHitEvent(socketId, CONSTANTS.WEAPON.M61.DAMAGE);
+                        }
+
+                        // Effect and Cleanup
+                        this.createImpactEffect(closestPoint);
+                        this.game.scene.remove(p.mesh);
+                        this.projectiles.splice(i, 1);
+                        break;
+                    }
+                }
+            }
+
+            if (hasHitPlayer) continue;
         }
     }
 
@@ -339,6 +380,11 @@ export class FixedWing {
         // Muzzle Flash
         this.muzzleFlash.visible = true;
         this.muzzleFlashTimer = 0.05;
+
+        // Sync to network
+        if (this.game.networkManager) {
+            this.game.networkManager.sendFireEvent(this.chassisMesh.position, this.chassisMesh.quaternion, this.cannonRPM);
+        }
 
         // Recoil / Screen Shake
         if (this.game.applyRecoil) {
